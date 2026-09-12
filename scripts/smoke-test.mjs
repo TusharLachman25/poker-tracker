@@ -180,6 +180,61 @@ try {
   );
   check('the payment is listed in the history', historyCount, 1);
 
+  // --- Activity log: an edit has to leave a trace -----------------------
+  // Say who this phone is, so the edit is attributed rather than anonymous.
+  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  const identitySet = await page.evaluate(() => {
+    // Settings has several selects (currency first); pick the one listing players.
+    for (const select of document.querySelectorAll('select')) {
+      const option = [...select.options].find((o) => o.textContent === 'Ana');
+      if (!option) continue;
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
+    return false;
+  });
+  check('this device can say which player it belongs to', identitySet, true);
+  await new Promise((r) => setTimeout(r, 300));
+
+  // Edit the session: move money between Ana and Cy, keeping the table square.
+  await page.goto(`${BASE}/#/sessions`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  const sessionHref = await page.$eval('a.card', (a) => a.getAttribute('href'));
+  await page.goto(`${BASE}/${sessionHref}`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+
+  await page.evaluate(() => {
+    // React ignores a plain `.value =`, so go through the native setter.
+    const set = (el, v) => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const money = [...document.querySelectorAll('.card:not(.card-pad) input.input-money')];
+    set(money[1], '30'); // Ana cashes out less
+    set(money[5], '10'); // Cy cashes out more
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  await clickText('Save changes');
+  await new Promise((r) => setTimeout(r, 600));
+
+  await page.goto(`${BASE}/#/activity`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const log = await page.$$eval('.card > div', (rows) =>
+    rows.map((r) => r.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+  );
+
+  const edit = log.find((l) => l.includes('edited a session'));
+  check('the edit is recorded', Boolean(edit), true);
+  // The row text begins with the avatar's initials, so match the phrase itself.
+  check('and attributed to whoever made it', edit?.includes('Ana edited a session') ?? false, true);
+  check('with the old and new figures', edit?.includes('+$13.50') && edit?.includes('+$10'), true);
+  check('naming the other player who moved', edit?.includes('Cy') ?? false, true);
+  check('the original session log is still there', log.some((l) => l.includes('logged a session')), true);
+  check('as is the payment', log.some((l) => l.includes('recorded a payment')), true);
+
   check('no console errors', errors.length, 0);
   if (errors.length) for (const e of [...new Set(errors)]) console.log('        ', e);
 } catch (e) {

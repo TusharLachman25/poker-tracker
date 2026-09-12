@@ -3,6 +3,7 @@ import { money, parseMoney, signedMoney, toInput } from '../money';
 import { niceStep } from '../../components/ProfitChart';
 import { computeBalances, computeStats, sessionTotals } from '../stats';
 import { settle } from '../settle';
+import { NOTABLE, describeSession, diffSession, entry } from '../activity';
 import { MIN_PASSWORD, configFor, groupId, validateGroup } from '../sync';
 import type { Ledger, Session } from '../types';
 
@@ -15,6 +16,7 @@ function ledgerOf(sessions: Session[]): Ledger {
     players: [player('a', 'Ana'), player('b', 'Ben'), player('c', 'Cy')],
     sessions,
     payments: [],
+    activity: [],
     settings: { currency: 'USD', groupName: 'Test', defaultBuyIn: 1000, defaultStakes: '0.05/0.10' },
   };
 }
@@ -368,5 +370,71 @@ describe('outstanding balances', () => {
     const { transfers } = settle(new Map(rows.map((r) => [r.player.id, r.outstanding])));
     expect(transfers).toHaveLength(1);
     expect(transfers[0]).toEqual({ from: 'c', to: 'a', amount: 5000 });
+  });
+});
+
+describe('activity log', () => {
+  const players = [player('a', 'Ana'), player('b', 'Ben'), player('c', 'Cy')];
+
+  it('spells out which numbers moved when a session is edited', () => {
+    const before = session('s1', '2026-01-01', [
+      { playerId: 'a', buyIn: 1000, cashOut: 2000 }, // +$10
+      { playerId: 'b', buyIn: 1000, cashOut: 0 },    // -$10
+    ]);
+    const after = session('s1', '2026-01-01', [
+      { playerId: 'a', buyIn: 1000, cashOut: 500 },  // now -$5
+      { playerId: 'b', buyIn: 1000, cashOut: 1500 }, // now +$5
+    ]);
+
+    const detail = diffSession(before, after, players, 'USD')!;
+    expect(detail).toContain('Ana: +$10 → -$5');
+    expect(detail).toContain('Ben: -$10 → +$5');
+  });
+
+  it('reports a player being added to or dropped from a session', () => {
+    const before = session('s1', '2026-01-01', [{ playerId: 'a', buyIn: 1000, cashOut: 2000 }]);
+    const withCy = session('s1', '2026-01-01', [
+      { playerId: 'a', buyIn: 1000, cashOut: 2000 },
+      { playerId: 'c', buyIn: 1000, cashOut: 0 },
+    ]);
+
+    expect(diffSession(before, withCy, players, 'USD')).toContain('Cy added at -$10');
+    expect(diffSession(withCy, before, players, 'USD')).toContain('Cy removed (was -$10)');
+  });
+
+  it('notices the date being moved', () => {
+    const before = session('s1', '2026-01-01', [{ playerId: 'a', buyIn: 1000, cashOut: 2000 }]);
+    const after = { ...before, date: '2026-02-09' };
+    expect(diffSession(before, after, players, 'USD')).toContain('2026-01-01 → 2026-02-09');
+  });
+
+  it('says nothing when an edit changed no numbers', () => {
+    const s = session('s1', '2026-01-01', [{ playerId: 'a', buyIn: 1000, cashOut: 2000 }]);
+    expect(diffSession(s, { ...s, location: 'somewhere new' }, players, 'USD')).toBeUndefined();
+  });
+
+  it('describes a session the way a person would recognise it', () => {
+    const s = session('s1', '2026-01-01', [
+      { playerId: 'a', buyIn: 1000, cashOut: 2000 },
+      { playerId: 'b', buyIn: 1000, cashOut: 0 },
+    ]);
+    const text = describeSession(s, 'USD');
+    expect(text).toContain('2 players');
+    expect(text).toContain('$20 in play');
+  });
+
+  it('flags edits and deletions as the entries worth scrutinising', () => {
+    expect(NOTABLE.has('session.update')).toBe(true);
+    expect(NOTABLE.has('session.delete')).toBe(true);
+    expect(NOTABLE.has('ledger.erase')).toBe(true);
+    expect(NOTABLE.has('session.create')).toBe(false);
+  });
+
+  it('stamps every entry with an actor and a time', () => {
+    const e = entry({ id: 'a', name: 'Ana' }, 'session.delete', 'a session');
+    expect(e.actorName).toBe('Ana');
+    expect(e.actorId).toBe('a');
+    expect(e.at).toBeGreaterThan(0);
+    expect(e.id).toBeTruthy();
   });
 });

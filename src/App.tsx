@@ -2,6 +2,7 @@ import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 're
 import { CardsIcon, CashIcon, GearIcon, PeopleIcon, PlusIcon, SyncIcon, TrophyIcon } from './components/icons';
 import { useStore } from './lib/store';
 import { syncNow, useSyncEngine } from './lib/useSync';
+import { Activity } from './screens/Activity';
 import { Leaderboard } from './screens/Leaderboard';
 import { Payments } from './screens/Payments';
 import { PlayerDetail } from './screens/PlayerDetail';
@@ -33,6 +34,7 @@ function Shell() {
         <Route path="/players" element={<Players />} />
         <Route path="/players/:id" element={<PlayerDetail />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/activity" element={<Activity />} />
         <Route path="*" element={<Leaderboard />} />
       </Routes>
       <TabBar />
@@ -55,7 +57,7 @@ function TopBar() {
   const syncState = useStore((s) => s.syncState);
 
   // Detail and editor screens carry their own header.
-  const isDetail = /^\/(sessions|players)\/.+/.test(pathname);
+  const isDetail = /^\/(sessions|players)\/.+/.test(pathname) || pathname === '/activity';
   if (isDetail) return null;
 
   const title = TITLES[pathname] ?? 'Leaderboard';

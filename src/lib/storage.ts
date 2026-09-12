@@ -14,6 +14,7 @@ export const emptyLedger = (): Ledger => ({
   players: [],
   sessions: [],
   payments: [],
+  activity: [],
   settings: defaultSettings(),
 });
 
@@ -42,8 +43,9 @@ export const loadLedger = (): Ledger => {
   // setting existed would come back missing it. Fill any gaps here.
   return {
     ...ledger,
-    // Ledgers saved before payments existed have no such array.
+    // Ledgers saved before these existed have no such arrays.
     payments: ledger.payments ?? [],
+    activity: ledger.activity ?? [],
     settings: { ...defaultSettings(), ...ledger.settings },
   };
 };
@@ -79,6 +81,9 @@ export function validateLedger(value: unknown): Ledger | null {
   const sessions = v.sessions.filter(
     (s) => s && typeof s.id === 'string' && typeof s.date === 'string' && Array.isArray(s.entries),
   );
+  const activity = (v.activity ?? []).filter(
+    (a) => a && typeof a.id === 'string' && typeof a.summary === 'string',
+  );
   const payments = (v.payments ?? []).filter(
     (p) =>
       p &&
@@ -106,6 +111,39 @@ export function validateLedger(value: unknown): Ledger | null {
       date: typeof p.date === 'string' ? p.date : '',
       updatedAt: p.updatedAt ?? Date.now(),
     })),
+    activity: activity.map((a) => ({
+      ...a,
+      actorName: a.actorName ?? 'Someone',
+      at: a.at ?? Date.now(),
+      updatedAt: a.updatedAt ?? a.at ?? Date.now(),
+    })),
     settings: { ...defaultSettings(), ...(v.settings ?? {}) },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Device identity
+// ---------------------------------------------------------------------------
+
+const WHOAMI_KEY = 'poker-tracker/whoami/v1';
+
+/**
+ * Which player is using this device. Stored locally and never synced — it
+ * describes the phone, not the group, and every phone answers differently.
+ */
+export const loadWhoAmI = (): string => {
+  try {
+    return localStorage.getItem(WHOAMI_KEY) ?? '';
+  } catch {
+    return '';
+  }
+};
+
+export const saveWhoAmI = (playerId: string): void => {
+  try {
+    if (playerId) localStorage.setItem(WHOAMI_KEY, playerId);
+    else localStorage.removeItem(WHOAMI_KEY);
+  } catch {
+    /* ignore */
+  }
+};

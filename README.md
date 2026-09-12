@@ -27,6 +27,12 @@ can also be settled on its own, straight from the session editor.
 **Players** — per-person page with their full history, best and worst nights,
 hourly rate when you record how long you played.
 
+**Group activity** — every session, payment and player change, with who made
+it. An edit records the numbers on both sides of it ("Sam: -$10 → -$2.50"), so
+a quietly rewritten result is visible rather than silent. Set who's using each
+phone under **Settings → Who's using this phone**; it's an honour-system record
+for a friendly group, not proof against someone determined.
+
 **Your data** — JSON backup, CSV export for spreadsheets (sessions, standings,
 payments and outstanding balances), and optional cloud sync so the group shares
 one set of numbers.
@@ -165,6 +171,7 @@ src/
     money.ts      Parsing and formatting
     stats.ts      Leaderboard, per-player stats, outstanding balances
     settle.ts     Who-pays-whom
+    activity.ts   Audit-log entries and session diffing
     merge.ts      Last-write-wins merge used by sync
     store.ts      Zustand store + persistence
     sync.ts       Supabase client (lazy-loaded)

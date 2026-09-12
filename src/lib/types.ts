@@ -72,6 +72,42 @@ export interface Payment {
   updatedAt: number;
 }
 
+export type ActivityAction =
+  | 'session.create'
+  | 'session.update'
+  | 'session.delete'
+  | 'payment.create'
+  | 'payment.delete'
+  | 'player.add'
+  | 'player.rename'
+  | 'player.remove'
+  | 'ledger.import'
+  | 'ledger.erase';
+
+/**
+ * One entry in the group's paper trail.
+ *
+ * Append-only: entries are never edited, only pruned when very old. The actor
+ * is whoever the device says it belongs to, so this is an honour-system record
+ * — enough to answer "who changed my numbers?", not proof against someone
+ * determined.
+ */
+export interface Activity {
+  id: ID;
+  /** Player this device is set to, if any. */
+  actorId?: ID;
+  /** Name captured when it happened, so a later rename doesn't rewrite history. */
+  actorName: string;
+  action: ActivityAction;
+  /** One-line description of what was touched. */
+  summary: string;
+  /** Optional specifics — for an edit, which numbers moved. */
+  detail?: string;
+  /** When it happened. */
+  at: number;
+  updatedAt: number;
+}
+
 export interface Settings {
   /** ISO 4217 code, e.g. "USD", "INR", "GBP". */
   currency: string;
@@ -87,6 +123,7 @@ export interface Ledger {
   players: Player[];
   sessions: Session[];
   payments: Payment[];
+  activity: Activity[];
   settings: Settings;
 }
 

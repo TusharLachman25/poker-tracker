@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Field, Money, Sheet } from '../components/ui';
 import { parseMoney, toInput } from '../lib/money';
-import { CheckIcon, DownloadIcon, SyncIcon, UploadIcon } from '../components/icons';
+import { CheckIcon, ChevronIcon, DownloadIcon, SyncIcon, UploadIcon } from '../components/icons';
 import { exportCsv, exportJson, pickAndImport } from '../lib/exchange';
 import { activePlayers, computeStats, groupSummary } from '../lib/stats';
 import { useStore } from '../lib/store';
@@ -71,6 +72,8 @@ export function Settings() {
           row adds another. Set it to 0 to start sessions empty instead.
         </p>
       </div>
+
+      <IdentitySection />
 
       <SyncSection />
 
@@ -163,6 +166,55 @@ export function Settings() {
         </Sheet>
       ) : null}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Who this device belongs to, and the group's paper trail
+// ---------------------------------------------------------------------------
+
+function IdentitySection() {
+  const ledger = useStore((s) => s.ledger);
+  const whoAmI = useStore((s) => s.whoAmI);
+  const setWhoAmI = useStore((s) => s.setWhoAmI);
+
+  const players = ledger.players.filter((p) => !p.deleted);
+  const recent = [...(ledger.activity ?? [])].sort((a, b) => b.at - a.at)[0];
+
+  return (
+    <>
+      <div className="section-label">Who&apos;s using this phone</div>
+      <div className="card card-pad stack-sm">
+        <Field
+          label="You are"
+          hint="Names your changes in the group's activity log, so everyone can see who edited what."
+        >
+          <select className="input" value={whoAmI} onChange={(e) => setWhoAmI(e.target.value)}>
+            <option value="">Not set — changes log as &quot;Someone&quot;</option>
+            {players.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Link className="btn btn-block" to="/activity" style={{ marginTop: 4 }}>
+          <span className="grow" style={{ textAlign: 'left' }}>
+            Group activity
+          </span>
+          <ChevronIcon />
+        </Link>
+
+        {recent ? (
+          <p className="hint">
+            Last change: {recent.actorName} — {recent.summary}
+          </p>
+        ) : (
+          <p className="hint">Every session, payment and player change is recorded here.</p>
+        )}
+      </div>
+    </>
   );
 }
 

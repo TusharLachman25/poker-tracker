@@ -1,7 +1,27 @@
 import { create } from 'zustand';
-import { mergeLedgers } from './merge';
-import { emptyLedger, loadLedger, loadSync, saveLedger, saveSync } from './storage';
-import type { Entry, ID, Ledger, Payment, Player, Session, Settings, SyncConfig } from './types';
+import { describePayment, describeSession, diffSession, entry } from './activity';
+import { MAX_ACTIVITY, mergeLedgers } from './merge';
+import {
+  emptyLedger,
+  loadLedger,
+  loadSync,
+  loadWhoAmI,
+  saveLedger,
+  saveSync,
+  saveWhoAmI,
+} from './storage';
+import type {
+  Activity,
+  ActivityAction,
+  Entry,
+  ID,
+  Ledger,
+  Payment,
+  Player,
+  Session,
+  Settings,
+  SyncConfig,
+} from './types';
 
 /** Chart-friendly palette: distinct hues, all legible on the dark felt background. */
 export const PALETTE = [
@@ -20,6 +40,10 @@ export type SyncState = 'idle' | 'syncing' | 'ok' | 'error' | 'off';
 
 interface Store {
   ledger: Ledger;
+  /** Which player this device belongs to; labels entries in the activity log. */
+  whoAmI: ID;
+  setWhoAmI: (playerId: ID) => void;
+  actor: () => { id?: ID; name: string };
   sync: SyncConfig | null;
   syncState: SyncState;
   syncMessage: string;
@@ -51,30 +75,77 @@ function commit(set: (partial: Partial<Store>) => void, ledger: Ledger) {
   set({ ledger });
 }
 
+/**
+ * Persist a change together with its log entry.
+ *
+ * Every mutation goes through here, so nothing can quietly change the numbers
+ * without leaving a trace — which is the whole point of the log.
+ */
+function commitLogged(
+  set: (partial: Partial<Store>) => void,
+  ledger: Ledger,
+  actor: { id?: ID; name: string },
+  action: ActivityAction,
+  summary: string,
+  detail?: string,
+) {
+  const log: Activity[] = [...(ledger.activity ?? []), entry(actor, action, summary, detail)];
+  // Oldest first in storage; trimmed from the front when it gets long.
+  const activity = log.length > MAX_ACTIVITY ? log.slice(log.length - MAX_ACTIVITY) : log;
+  commit(set, { ...ledger, activity });
+}
+
 export const useStore = create<Store>((set, get) => ({
   ledger: loadLedger(),
+  whoAmI: loadWhoAmI(),
   sync: loadSync(),
   syncState: loadSync() ? 'idle' : 'off',
   syncMessage: '',
   lastSyncedAt: null,
+
+  setWhoAmI(playerId) {
+    saveWhoAmI(playerId);
+    set({ whoAmI: playerId });
+  },
+
+  /** Who this device says it is. Unset devices log as "Someone". */
+  actor() {
+    const { ledger, whoAmI } = get();
+    const me = ledger.players.find((p) => p.id === whoAmI && !p.deleted);
+    return me ? { id: me.id, name: me.name } : { name: 'Someone' };
+  },
 
   addPlayer(name) {
     const ledger = get().ledger;
     const used = new Set(ledger.players.filter((p) => !p.deleted).map((p) => p.color));
     const color = PALETTE.find((c) => !used.has(c)) ?? PALETTE[ledger.players.length % PALETTE.length];
     const player: Player = { id: newId(), name: name.trim(), color, updatedAt: Date.now() };
-    commit(set, { ...ledger, players: [...ledger.players, player] });
+    commitLogged(
+      set,
+      { ...ledger, players: [...ledger.players, player] },
+      get().actor(),
+      'player.add',
+      player.name,
+    );
     return player;
   },
 
   renamePlayer(id, name) {
     const ledger = get().ledger;
-    commit(set, {
-      ...ledger,
-      players: ledger.players.map((p) =>
-        p.id === id ? { ...p, name: name.trim(), updatedAt: Date.now() } : p,
-      ),
-    });
+    const before = ledger.players.find((p) => p.id === id);
+    if (!before || before.name === name.trim()) return;
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        players: ledger.players.map((p) =>
+          p.id === id ? { ...p, name: name.trim(), updatedAt: Date.now() } : p,
+        ),
+      },
+      get().actor(),
+      'player.rename',
+      `${before.name} → ${name.trim()}`,
+    );
   },
 
   recolorPlayer(id, color) {
@@ -91,12 +162,18 @@ export const useStore = create<Store>((set, get) => ({
     const ledger = get().ledger;
     // Tombstone rather than splice: a hard delete would come back on next sync,
     // and past sessions keep their history either way.
-    commit(set, {
-      ...ledger,
-      players: ledger.players.map((p) =>
-        p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p,
-      ),
-    });
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        players: ledger.players.map((p) =>
+          p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p,
+        ),
+      },
+      get().actor(),
+      'player.remove',
+      ledger.players.find((p) => p.id === id)?.name ?? 'a player',
+    );
   },
 
   saveSession(session) {
@@ -107,23 +184,39 @@ export const useStore = create<Store>((set, get) => ({
       entries: session.entries.filter((e: Entry) => e.buyIn !== 0 || e.cashOut !== 0),
       updatedAt: Date.now(),
     };
-    const exists = ledger.sessions.some((s) => s.id === next.id);
-    commit(set, {
-      ...ledger,
-      sessions: exists
-        ? ledger.sessions.map((s) => (s.id === next.id ? next : s))
-        : [...ledger.sessions, next],
-    });
+    const before = ledger.sessions.find((s) => s.id === next.id);
+    const currency = ledger.settings.currency;
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        sessions: before
+          ? ledger.sessions.map((s) => (s.id === next.id ? next : s))
+          : [...ledger.sessions, next],
+      },
+      get().actor(),
+      before ? 'session.update' : 'session.create',
+      describeSession(next, currency),
+      before ? diffSession(before, next, ledger.players, currency) : undefined,
+    );
   },
 
   deleteSession(id) {
     const ledger = get().ledger;
-    commit(set, {
-      ...ledger,
-      sessions: ledger.sessions.map((s) =>
-        s.id === id ? { ...s, deleted: true, updatedAt: Date.now() } : s,
-      ),
-    });
+    const gone = ledger.sessions.find((s) => s.id === id);
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        sessions: ledger.sessions.map((s) =>
+          s.id === id ? { ...s, deleted: true, updatedAt: Date.now() } : s,
+        ),
+      },
+      get().actor(),
+      'session.delete',
+      gone ? describeSession(gone, ledger.settings.currency) : 'a session',
+      gone ? diffSession(gone, { ...gone, entries: [] }, ledger.players, ledger.settings.currency) : undefined,
+    );
   },
 
   savePayment(payment) {
@@ -136,20 +229,34 @@ export const useStore = create<Store>((set, get) => ({
     };
     const payments = ledger.payments ?? [];
     const exists = payments.some((p) => p.id === next.id);
-    commit(set, {
-      ...ledger,
-      payments: exists ? payments.map((p) => (p.id === next.id ? next : p)) : [...payments, next],
-    });
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        payments: exists ? payments.map((p) => (p.id === next.id ? next : p)) : [...payments, next],
+      },
+      get().actor(),
+      'payment.create',
+      describePayment(next, ledger.players, ledger.settings.currency),
+      next.note,
+    );
   },
 
   deletePayment(id) {
     const ledger = get().ledger;
-    commit(set, {
-      ...ledger,
-      payments: (ledger.payments ?? []).map((p) =>
-        p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p,
-      ),
-    });
+    const gone = (ledger.payments ?? []).find((p) => p.id === id);
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        payments: (ledger.payments ?? []).map((p) =>
+          p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p,
+        ),
+      },
+      get().actor(),
+      'payment.delete',
+      gone ? describePayment(gone, ledger.players, ledger.settings.currency) : 'a payment',
+    );
   },
 
   updateSettings(patch) {
@@ -158,7 +265,18 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   replaceLedger(ledger) {
-    commit(set, ledger);
+    const previous = get().ledger;
+    const erasing = ledger.players.length === 0 && ledger.sessions.length === 0;
+    // The log survives the swap: a wipe is exactly the event worth keeping.
+    commitLogged(
+      set,
+      { ...ledger, activity: previous.activity ?? [] },
+      get().actor(),
+      erasing ? 'ledger.erase' : 'ledger.import',
+      erasing
+        ? 'Wiped this device'
+        : `${ledger.players.length} players, ${ledger.sessions.length} sessions`,
+    );
   },
 
   mergeIn(incoming) {

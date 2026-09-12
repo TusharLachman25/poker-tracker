@@ -1,4 +1,4 @@
-import type { Ledger, Payment, Player, Session } from './types';
+import type { Activity, Ledger, Payment, Player, Session } from './types';
 
 interface Versioned {
   id: string;
@@ -33,9 +33,20 @@ export function mergeLedgers(mine: Ledger, theirs: Ledger): Ledger {
     players: mergeList<Player>(mine.players, theirs.players),
     sessions: mergeList<Session>(mine.sessions, theirs.sessions),
     payments: mergeList<Payment>(mine.payments ?? [], theirs.payments ?? []),
+    // Append-only, so this is a union rather than a contest; trimmed to keep
+    // the synced document small.
+    activity: trimActivity(mergeList<Activity>(mine.activity ?? [], theirs.activity ?? [])),
     // Settings are a single small record; prefer whichever side named the group.
     settings: theirs.settings?.groupName ? { ...mine.settings, ...theirs.settings } : mine.settings,
   };
+}
+
+/** The log is a convenience, not an archive — keep it bounded. */
+export const MAX_ACTIVITY = 300;
+
+function trimActivity(entries: Activity[]): Activity[] {
+  if (entries.length <= MAX_ACTIVITY) return entries;
+  return [...entries].sort((a, b) => b.at - a.at).slice(0, MAX_ACTIVITY);
 }
 
 /** Drop tombstones that are old enough that every device has surely seen them. */
