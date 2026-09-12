@@ -4,7 +4,8 @@ Out of the box the app keeps everything on your own phone. That's fine for one
 person, but you want the group to see the same numbers — so this connects the
 app to a free Supabase project that holds one shared ledger.
 
-**One person does steps 1–3. Everyone else only does step 5.**
+**You do this once. Your friends do nothing** — the project and group code get
+baked into the build they install.
 
 Budget about five minutes. The free tier is far more than a home game needs, and
 there's no credit card.
@@ -43,30 +44,43 @@ and three functions, not data.
 >
 > The **service_role** key is the dangerous one. Never put that in the app.
 
-## 4. Start the group
+## 4. Bake them into the build
 
-In the app on your phone:
+In the project folder:
 
-1. **Settings** → **Set up sharing**
-2. Paste the Project URL and the anon key
-3. Leave it on **Start a group** and tap **Create group**
+```bash
+cp .env.example .env
+```
 
-You'll get a **group code** like `K7QMPX-R4T9WBNZ2H`. This uploads whatever is
-already on your phone, so if you've been logging sessions already, nothing is lost.
+Put the Project URL and anon key into `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY`. `.env` is gitignored, so it stays on your machine.
 
-## 5. Everyone else joins
+## 5. Create the group and record its code
 
-Send your friends three things:
+```bash
+npm run dev
+```
 
-- the Project URL
-- the anon public key
-- the group code
+Open the app, go to **Settings → Set up sharing**. The URL and key are already
+filled in, so just tap **Create group**. You'll get a code like
+`K7QMPX-R4T9WBNZ2H`. This uploads whatever you've already logged, so nothing is
+lost.
 
-On their phone: **Settings → Set up sharing**, paste the URL and key, tap
-**Join a group**, enter the code, tap **Join group**.
+Paste that code into `VITE_GROUP_CODE` in `.env`.
 
-They'll pull down the group's history, and anything they'd already logged locally
-gets merged in rather than thrown away.
+## 6. Ship it
+
+```bash
+npm run deploy        # publishes the web app
+npm run android:apk   # rebuilds the Android app
+```
+
+Every install from here on joins the group on first launch. Your friends just
+open the link (or the APK) and start logging sessions.
+
+> If you'd rather the code weren't public — the site is open to anyone with the
+> URL — leave `VITE_GROUP_CODE` empty. Friends then paste the code once on first
+> open, and everything else still happens for them.
 
 ---
 

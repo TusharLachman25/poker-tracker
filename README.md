@@ -56,33 +56,23 @@ npm run dev          # http://localhost:5173
 
 ## Getting it onto phones
 
+**Live at <https://tusharlachman25.github.io/poker-tracker/>**
+
 ### iPhone — install the web app
 
 iOS doesn't allow sideloading, so iPhones get the app as an installable PWA.
 It behaves like a normal app: own icon, no browser chrome, works offline.
 
-1. Host the contents of `dist/` anywhere static. The build uses relative paths,
-   so a subfolder is fine. Easiest options:
-   - **Netlify** — drag the `dist` folder onto <https://app.netlify.com/drop>
-   - **Vercel** — `npx vercel deploy --prod dist`
-   - **GitHub Pages** — push `dist/` to a `gh-pages` branch
-2. Open the URL in **Safari** (this doesn't work from Chrome on iOS).
-3. Share → **Add to Home Screen**.
-
-It must be served over HTTPS for offline mode to work. All the hosts above do
-that automatically.
-
-Android users can install the same web app from Chrome ("Add to Home screen"),
-or use the APK below.
+1. Open the link above in **Safari** (this doesn't work from Chrome on iOS).
+2. Share → **Add to Home Screen**.
 
 ### Android — install the APK
 
-A ready-to-install debug build is at `build-output/PokerTracker-debug.apk`.
+Download it from the [latest release](https://github.com/TusharLachman25/poker-tracker/releases/latest)
+and open it. Android will ask you to allow installing from that source the
+first time. Android users can equally install the web app from Chrome.
 
-Send it to the phone (or `adb install`), then open it. Android will ask you to
-allow installing from that source the first time.
-
-To rebuild it yourself:
+To rebuild the APK yourself:
 
 ```bash
 npm run android:apk
@@ -96,14 +86,31 @@ point it at yours in `android/local.properties`:
 sdk.dir=C:/Users/you/AppData/Local/Android/Sdk
 ```
 
+### Publishing an update
+
+```bash
+npm run deploy
+```
+
+Builds and force-pushes `dist/` to the `gh-pages` branch. Your local `.env` is
+baked into that build but never committed.
+
+Phones running the installed web app pick up the new version on next launch.
+The Android app doesn't auto-update — rebuild the APK and re-send it, or point
+people at the web app instead.
+
+> Prefer deploying on every push instead? Grant the token the workflow scope
+> with `gh auth refresh -h github.com -s workflow`, then add a GitHub Actions
+> Pages workflow. The local script needs no extra permissions, which is why
+> it's the default here.
+
 #### A signed release build
 
 Debug APKs are fine for passing round your group. For a Play Store upload you
 need a signed release build — create a keystore once:
 
 ```bash
-keytool -genkey -v -keystore poker-tracker.keystore \
-  -alias poker -keyalg RSA -keysize 2048 -validity 10000
+keytool -genkey -v -keystore poker-tracker.keystore   -alias poker -keyalg RSA -keysize 2048 -validity 10000
 ```
 
 then follow the Capacitor signing guide:
@@ -113,21 +120,32 @@ then follow the Capacitor signing guide:
 
 ## Sharing between friends
 
-Without setup, each phone keeps its own copy. To put everyone on one ledger,
-connect a free Supabase project — see **[SETUP.md](SETUP.md)** for the
-click-by-click version. Roughly:
+The Supabase project and group code are **baked into the build**, so your
+friends install the app and are already on the group ledger — no settings, no
+pasting codes.
 
-1. One person creates a Supabase project and runs `supabase/schema.sql`.
-2. In the app: **Settings → Set up sharing**, paste the project URL and anon
-   key, tap **Start a group**.
-3. Share the **group code** and those two values with everyone else, who tap
-   **Join a group** instead.
+Set it up once:
+
+1. Create a free Supabase project and run `supabase/schema.sql` in its SQL
+   editor — see **[SETUP.md](SETUP.md)**.
+2. `cp .env.example .env` and fill in the project URL and anon key.
+3. `npm run dev`, then **Settings → Set up sharing → Start a group**. Copy the
+   group code it gives you into `VITE_GROUP_CODE` in `.env`.
+4. `npm run deploy`, and rebuild the APK. Every install from then on joins that
+   group automatically.
+
+Leave `.env` empty and the app is simply a local-only tracker; the manual setup
+screen appears instead.
 
 Edits merge rather than overwrite, so two people can log different sessions on
 different phones and nobody's work disappears. Sync runs when the app opens,
 regains focus, and shortly after any change.
 
-Free-tier Supabase is far more than a home game will ever need.
+> **Worth knowing:** the site is public, and anything baked into the build ships
+> to the browser — so anyone who finds the URL can read and edit the group's
+> numbers. That's usually fine for a home game. If you'd rather not have that,
+> leave `VITE_GROUP_CODE` out: friends then paste one short code the first time
+> they open it, and everything else is still automatic.
 
 ---
 
