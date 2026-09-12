@@ -1,4 +1,4 @@
-import type { Ledger, Player, Session } from './types';
+import type { Ledger, Payment, Player, Session } from './types';
 
 interface Versioned {
   id: string;
@@ -32,6 +32,7 @@ export function mergeLedgers(mine: Ledger, theirs: Ledger): Ledger {
   return {
     players: mergeList<Player>(mine.players, theirs.players),
     sessions: mergeList<Session>(mine.sessions, theirs.sessions),
+    payments: mergeList<Payment>(mine.payments ?? [], theirs.payments ?? []),
     // Settings are a single small record; prefer whichever side named the group.
     settings: theirs.settings?.groupName ? { ...mine.settings, ...theirs.settings } : mine.settings,
   };
@@ -44,5 +45,6 @@ export function pruneTombstones(ledger: Ledger, olderThanMs = 1000 * 60 * 60 * 2
     ...ledger,
     players: ledger.players.filter((p) => !p.deleted || p.updatedAt > cutoff),
     sessions: ledger.sessions.filter((s) => !s.deleted || s.updatedAt > cutoff),
+    payments: ledger.payments.filter((p) => !p.deleted || p.updatedAt > cutoff),
   };
 }

@@ -1,8 +1,9 @@
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { CardsIcon, GearIcon, PeopleIcon, PlusIcon, SyncIcon, TrophyIcon } from './components/icons';
+import { CardsIcon, CashIcon, GearIcon, PeopleIcon, PlusIcon, SyncIcon, TrophyIcon } from './components/icons';
 import { useStore } from './lib/store';
 import { syncNow, useSyncEngine } from './lib/useSync';
 import { Leaderboard } from './screens/Leaderboard';
+import { Payments } from './screens/Payments';
 import { PlayerDetail } from './screens/PlayerDetail';
 import { Players } from './screens/Players';
 import { SessionEditor } from './screens/SessionEditor';
@@ -28,6 +29,7 @@ function Shell() {
         <Route path="/" element={<Leaderboard />} />
         <Route path="/sessions" element={<Sessions />} />
         <Route path="/sessions/:id" element={<SessionEditor />} />
+        <Route path="/payments" element={<Payments />} />
         <Route path="/players" element={<Players />} />
         <Route path="/players/:id" element={<PlayerDetail />} />
         <Route path="/settings" element={<Settings />} />
@@ -41,6 +43,7 @@ function Shell() {
 const TITLES: Record<string, string> = {
   '/': 'Leaderboard',
   '/sessions': 'Sessions',
+  '/payments': 'Payments',
   '/players': 'Players',
   '/settings': 'Settings',
 };
@@ -93,6 +96,7 @@ function TopBar() {
 const TABS = [
   { to: '/', label: 'Standings', Icon: TrophyIcon },
   { to: '/sessions', label: 'Sessions', Icon: CardsIcon },
+  { to: '/payments', label: 'Payments', Icon: CashIcon },
   { to: '/players', label: 'Players', Icon: PeopleIcon },
   { to: '/settings', label: 'Settings', Icon: GearIcon },
 ];

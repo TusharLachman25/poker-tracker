@@ -56,6 +56,22 @@ export interface Session {
   updatedAt: number;
 }
 
+/** Money actually handed over, settling part or all of a debt. */
+export interface Payment {
+  id: ID;
+  /** Who paid. */
+  from: ID;
+  /** Who was paid. */
+  to: ID;
+  /** Always positive, in cents. */
+  amount: number;
+  /** ISO date, `YYYY-MM-DD`. */
+  date: string;
+  note?: string;
+  deleted?: boolean;
+  updatedAt: number;
+}
+
 export interface Settings {
   /** ISO 4217 code, e.g. "USD", "INR", "GBP". */
   currency: string;
@@ -70,6 +86,7 @@ export interface Settings {
 export interface Ledger {
   players: Player[];
   sessions: Session[];
+  payments: Payment[];
   settings: Settings;
 }
 
@@ -110,6 +127,22 @@ export interface PlayerStats {
   streak: number;
   /** Running net after each session, oldest first. */
   cumulative: { date: string; sessionId: ID; net: number; total: number }[];
+}
+
+/**
+ * Where a player stands once payments are taken into account.
+ * This is the number that actually matters when squaring up.
+ */
+export interface Balance {
+  player: Player;
+  /** Winnings and losses from sessions alone. */
+  net: number;
+  /** Total this player has handed over. */
+  paid: number;
+  /** Total this player has been given. */
+  received: number;
+  /** Positive: still owed this much. Negative: still owes it. */
+  outstanding: number;
 }
 
 /** One leg of a settle-up plan: `from` pays `to`. */

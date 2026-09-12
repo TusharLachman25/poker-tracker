@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { mergeLedgers } from './merge';
 import { emptyLedger, loadLedger, loadSync, saveLedger, saveSync } from './storage';
-import type { Entry, ID, Ledger, Player, Session, Settings, SyncConfig } from './types';
+import type { Entry, ID, Ledger, Payment, Player, Session, Settings, SyncConfig } from './types';
 
 /** Chart-friendly palette: distinct hues, all legible on the dark felt background. */
 export const PALETTE = [
@@ -32,6 +32,9 @@ interface Store {
 
   saveSession: (session: Session) => void;
   deleteSession: (id: ID) => void;
+
+  savePayment: (payment: Payment) => void;
+  deletePayment: (id: ID) => void;
 
   updateSettings: (patch: Partial<Settings>) => void;
 
@@ -119,6 +122,32 @@ export const useStore = create<Store>((set, get) => ({
       ...ledger,
       sessions: ledger.sessions.map((s) =>
         s.id === id ? { ...s, deleted: true, updatedAt: Date.now() } : s,
+      ),
+    });
+  },
+
+  savePayment(payment) {
+    const ledger = get().ledger;
+    const next: Payment = {
+      ...payment,
+      // Direction is carried by from/to, so the amount is always positive.
+      amount: Math.abs(payment.amount),
+      updatedAt: Date.now(),
+    };
+    const payments = ledger.payments ?? [];
+    const exists = payments.some((p) => p.id === next.id);
+    commit(set, {
+      ...ledger,
+      payments: exists ? payments.map((p) => (p.id === next.id ? next : p)) : [...payments, next],
+    });
+  },
+
+  deletePayment(id) {
+    const ledger = get().ledger;
+    commit(set, {
+      ...ledger,
+      payments: (ledger.payments ?? []).map((p) =>
+        p.id === id ? { ...p, deleted: true, updatedAt: Date.now() } : p,
       ),
     });
   },

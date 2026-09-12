@@ -132,3 +132,11 @@ export const SpadeIcon = ({ className }: Props) => (
     <path d="M12 2.6c-.5 0-.8.3-1.1.7-1.5 1.8-4.4 3.9-5.5 5.7-.8 1.2-1 2.2-1 3.2 0 2.3 1.7 4 3.9 4 1 0 1.8-.3 2.4-.9-.3 1.6-1 2.8-2 3.7-.4.3-.3.9.2.9h6.1c.5 0 .7-.6.3-.9-1-.9-1.8-2.1-2.1-3.7.6.6 1.4.9 2.4.9 2.2 0 3.9-1.7 3.9-4 0-1-.2-2-1-3.2-1.1-1.8-4-3.9-5.5-5.7-.3-.4-.6-.7-1-.7Z" />
   </svg>
 );
+
+export const CashIcon = ({ className }: Props) => (
+  <svg {...base} className={cx(className)} aria-hidden="true">
+    <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+    <circle cx="12" cy="12" r="2.6" />
+    <path d="M6 9.5h.01M18 14.5h.01" />
+  </svg>
+);

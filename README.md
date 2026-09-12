@@ -19,14 +19,17 @@ another bullet in one tap, so a normal night only needs the cash-outs typed in.
 The editor adds it up live and warns you when cash-outs don't match buy-ins,
 which is almost always a typo rather than a miracle.
 
-**Settle up** — turns everyone's balance into the shortest list of payments
-("Sam pays Dev $370"), for one night or for all time.
+**Payments** — who owes who, as the shortest list of payments that clears
+everyone. Record one (in full or in part) and it comes straight off the
+outstanding totals, with a history of everything already settled. A session
+can also be settled on its own, straight from the session editor.
 
 **Players** — per-person page with their full history, best and worst nights,
 hourly rate when you record how long you played.
 
-**Your data** — JSON backup, CSV export for spreadsheets, and optional cloud
-sync so the group shares one set of numbers.
+**Your data** — JSON backup, CSV export for spreadsheets (sessions, standings,
+payments and outstanding balances), and optional cloud sync so the group shares
+one set of numbers.
 
 Defaults are set for a **$10 buy-in at 0.05/0.10 blinds**. Change the standard
 buy-in and the stakes label under **Settings → Your game**; amounts are kept to
@@ -160,7 +163,7 @@ src/
   lib/
     types.ts      Domain model. All money is integer cents.
     money.ts      Parsing and formatting
-    stats.ts      Leaderboard, per-player stats, date filtering
+    stats.ts      Leaderboard, per-player stats, outstanding balances
     settle.ts     Who-pays-whom
     merge.ts      Last-write-wins merge used by sync
     store.ts      Zustand store + persistence

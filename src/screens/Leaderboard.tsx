@@ -6,14 +6,12 @@ import { HandshakeIcon, SpadeIcon } from '../components/icons';
 import { formatHours } from '../lib/money';
 import { RANGE_LABELS, computeStats, filterByRange, groupSummary, type RangeKey } from '../lib/stats';
 import { useStore } from '../lib/store';
-import { SettleSheet } from './SettleSheet';
 
 const RANGES: RangeKey[] = ['all', 'month', 'quarter', 'year'];
 
 export function Leaderboard() {
   const ledger = useStore((s) => s.ledger);
   const [range, setRange] = useState<RangeKey>('all');
-  const [settling, setSettling] = useState(false);
 
   const scoped = useMemo(() => filterByRange(ledger, range), [ledger, range]);
   const stats = useMemo(() => computeStats(scoped), [scoped]);
@@ -116,15 +114,12 @@ export function Leaderboard() {
         ))}
       </div>
 
-      <button
-        className="btn btn-block"
-        style={{ marginTop: 12 }}
-        onClick={() => setSettling(true)}
-        disabled={played.length < 2}
-      >
+      {/* Settling lives on the Payments page, which knows what has already
+          been handed over — these standings are winnings, not debts. */}
+      <Link className="btn btn-block" style={{ marginTop: 12 }} to="/payments">
         <HandshakeIcon />
         Settle up
-      </button>
+      </Link>
 
       <div className="section-label">The numbers</div>
       <div className="stat-grid">
@@ -161,7 +156,6 @@ export function Leaderboard() {
         ) : null}
       </div>
 
-      {settling ? <SettleSheet stats={played} onClose={() => setSettling(false)} /> : null}
     </div>
   );
 }

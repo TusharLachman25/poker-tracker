@@ -1,4 +1,4 @@
-import type { Entry, ID, Ledger, Player, PlayerStats, Session } from './types';
+import type { Balance, Entry, ID, Ledger, Payment, Player, PlayerStats, Session } from './types';
 
 /** An entry only counts once real money has moved. Keeps blank rows out of the stats. */
 export function isLive(e: Entry): boolean {
@@ -15,6 +15,17 @@ export function activeSessions(ledger: Ledger): Session[] {
 
 export function activePlayers(ledger: Ledger): Player[] {
   return ledger.players.filter((p) => !p.deleted);
+}
+
+export function activePayments(ledger: Ledger): Payment[] {
+  return (ledger.payments ?? []).filter((p) => !p.deleted && p.amount > 0);
+}
+
+/** Newest first — the order a payment history wants to be read in. */
+export function sortedPayments(payments: Payment[]): Payment[] {
+  return [...payments].sort(
+    (a, b) => b.date.localeCompare(a.date) || b.updatedAt - a.updatedAt,
+  );
 }
 
 /** Oldest first. Ties on date fall back to creation order via updatedAt. */
@@ -214,4 +225,63 @@ export function filterByRange(ledger: Ledger, key: RangeKey): Ledger {
   const start = rangeStart(key);
   if (!start) return ledger;
   return { ...ledger, sessions: ledger.sessions.filter((s) => s.date >= start) };
+}
+
+// ---------------------------------------------------------------------------
+// Outstanding balances
+// ---------------------------------------------------------------------------
+
+/**
+ * What everyone still owes once payments are accounted for.
+ *
+ * A player's session net is where they *should* end up. Handing money over
+ * moves both people closer to zero: the payer's debt shrinks, and the
+ * receiver has less still coming to them. So
+ *
+ *     outstanding = net + paid - received
+ *
+ * A player who lost $50 and has paid $20 sits at -$30: still $30 short.
+ * The winner they paid drops from +$50 to +$30 for the same reason.
+ *
+ * Outstanding amounts sum to zero exactly when the sessions do, because every
+ * payment adds to one player and subtracts the same from another.
+ *
+ * Sorted with the biggest creditor first, matching the leaderboard.
+ */
+export function computeBalances(ledger: Ledger): Balance[] {
+  const totals = new Map<ID, Balance>();
+
+  for (const player of activePlayers(ledger)) {
+    totals.set(player.id, { player, net: 0, paid: 0, received: 0, outstanding: 0 });
+  }
+
+  for (const session of activeSessions(ledger)) {
+    for (const entry of session.entries) {
+      if (!isLive(entry)) continue;
+      const row = totals.get(entry.playerId);
+      if (row) row.net += entryNet(entry);
+    }
+  }
+
+  for (const payment of activePayments(ledger)) {
+    // A payment involving a removed player still moved real money, but there
+    // is no row to attribute it to, so it is skipped on that side only.
+    const from = totals.get(payment.from);
+    const to = totals.get(payment.to);
+    if (from) from.paid += payment.amount;
+    if (to) to.received += payment.amount;
+  }
+
+  for (const row of totals.values()) {
+    row.outstanding = row.net + row.paid - row.received;
+  }
+
+  return [...totals.values()].sort(
+    (a, b) => b.outstanding - a.outstanding || a.player.name.localeCompare(b.player.name),
+  );
+}
+
+/** Total handed over across the group, for the summary line. */
+export function totalPaid(ledger: Ledger): number {
+  return activePayments(ledger).reduce((sum, p) => sum + p.amount, 0);
 }

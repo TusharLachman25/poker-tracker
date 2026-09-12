@@ -132,19 +132,53 @@ try {
   check('middle net keeps its cents', standings[1]?.net, '-$3.50');
   check('loser net is correct', standings[2]?.net, '-$10');
 
-  // --- Settle up --------------------------------------------------------
-  await clickText('Settle up');
-  await page.waitForSelector('.sheet', { visible: true });
-  await new Promise((r) => setTimeout(r, 400));
+  // --- Payments: who owes who, and paying it off ------------------------
+  await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
 
-  const transfers = await page.$$eval('.sheet .card > div', (rows) =>
-    rows
-      .map((r) => r.textContent?.replace(/\s+/g, ' ').trim())
-      .filter((t) => t && t.includes('→')),
+  // Suggested transfers are the rows carrying a "Record this payment" button;
+  // history rows contain an arrow too, so text alone wouldn't tell them apart.
+  const readTransfers = () =>
+    page.$$eval('.card > div', (rows) =>
+      rows
+        .filter((r) =>
+          [...r.querySelectorAll('button')].some((b) =>
+            b.textContent?.includes('Record this payment'),
+          ),
+        )
+        .map((r) => r.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+    );
+
+  const before = await readTransfers();
+  check('two payments would clear the night', before.length, 2);
+  check('Ben owes Ana $10', before.some((t) => t.includes('Ben') && t.includes('$10')), true);
+  check('Cy owes Ana $3.50', before.some((t) => t.includes('Cy') && t.includes('$3.50')), true);
+
+  // Record the first suggested payment straight from its row.
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Record this payment'),
+    );
+    btn?.click();
+  });
+  await page.waitForSelector('.sheet', { visible: true });
+  await new Promise((r) => setTimeout(r, 350));
+
+  const prefilledAmount = await page.$eval('.sheet input.input-money', (el) => el.value);
+  check('the payment sheet is pre-filled with the suggested amount', prefilledAmount, '10');
+
+  await clickText('Save payment', '.sheet');
+  await new Promise((r) => setTimeout(r, 500));
+
+  const after = await readTransfers();
+  check('paying leaves only the other debt outstanding', after.length, 1);
+  check('and it is Cy owing $3.50', after[0]?.includes('Cy') && after[0]?.includes('$3.50'), true);
+
+  const historyCount = await page.$$eval(
+    'button[aria-label="Delete this payment"]',
+    (els) => els.length,
   );
-  check('two payments settle the night', transfers.length, 2);
-  check('Ben pays Ana $10', transfers.some((t) => t.includes('Ben→') && t.endsWith('$10')), true);
-  check('Cy pays Ana $3.50', transfers.some((t) => t.includes('Cy→') && t.endsWith('$3.50')), true);
+  check('the payment is listed in the history', historyCount, 1);
 
   check('no console errors', errors.length, 0);
   if (errors.length) for (const e of [...new Set(errors)]) console.log('        ', e);

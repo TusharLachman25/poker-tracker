@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { money, parseMoney, signedMoney, toInput } from '../money';
 import { niceStep } from '../../components/ProfitChart';
-import { computeStats, sessionTotals } from '../stats';
+import { computeBalances, computeStats, sessionTotals } from '../stats';
 import { settle } from '../settle';
 import { MIN_PASSWORD, configFor, groupId, validateGroup } from '../sync';
 import type { Ledger, Session } from '../types';
@@ -14,6 +14,7 @@ function ledgerOf(sessions: Session[]): Ledger {
   return {
     players: [player('a', 'Ana'), player('b', 'Ben'), player('c', 'Cy')],
     sessions,
+    payments: [],
     settings: { currency: 'USD', groupName: 'Test', defaultBuyIn: 1000, defaultStakes: '0.05/0.10' },
   };
 }
@@ -284,5 +285,88 @@ describe('group name and password', () => {
     expect(theirs.ledgerId).toBe(mine.ledgerId);
     expect(theirs.secret).toBe(mine.secret);
     expect(mine.groupName).toBe('Friday Night Crew'); // display keeps their capitals
+  });
+});
+
+describe('outstanding balances', () => {
+  const night = session('s1', '2026-01-01', [
+    { playerId: 'a', buyIn: 10000, cashOut: 25000 }, // Ana +150
+    { playerId: 'b', buyIn: 10000, cashOut: 0 },     // Ben -100
+    { playerId: 'c', buyIn: 10000, cashOut: 5000 },  // Cy  -50
+  ]);
+
+  const pay = (id: string, from: string, to: string, amount: number) => ({
+    id, from, to, amount, date: '2026-01-02', updatedAt: 1,
+  });
+
+  const withPayments = (payments: ReturnType<typeof pay>[]) => ({
+    ...ledgerOf([night]),
+    payments,
+  });
+
+  const find = (rows: ReturnType<typeof computeBalances>, name: string) =>
+    rows.find((r) => r.player.name === name)!;
+
+  it('starts equal to the session nets when nobody has paid', () => {
+    const rows = computeBalances(withPayments([]));
+    expect(find(rows, 'Ana').outstanding).toBe(15000);
+    expect(find(rows, 'Ben').outstanding).toBe(-10000);
+    expect(find(rows, 'Cy').outstanding).toBe(-5000);
+  });
+
+  it('subtracts a payment from both sides', () => {
+    const rows = computeBalances(withPayments([pay('p1', 'b', 'a', 10000)]));
+    expect(find(rows, 'Ben').outstanding).toBe(0);      // paid in full
+    expect(find(rows, 'Ana').outstanding).toBe(5000);   // only Cy left to collect
+    expect(find(rows, 'Cy').outstanding).toBe(-5000);   // untouched
+  });
+
+  it('handles a partial payment', () => {
+    const rows = computeBalances(withPayments([pay('p1', 'b', 'a', 4000)]));
+    expect(find(rows, 'Ben').outstanding).toBe(-6000);  // still $60 short
+    expect(find(rows, 'Ana').outstanding).toBe(11000);
+    expect(find(rows, 'Ben').paid).toBe(4000);
+    expect(find(rows, 'Ana').received).toBe(4000);
+  });
+
+  it('clears everyone once every debt is paid', () => {
+    const rows = computeBalances(
+      withPayments([pay('p1', 'b', 'a', 10000), pay('p2', 'c', 'a', 5000)]),
+    );
+    for (const row of rows) expect(row.outstanding).toBe(0);
+    expect(settle(new Map(rows.map((r) => [r.player.id, r.outstanding]))).transfers).toEqual([]);
+  });
+
+  it('stays zero-sum no matter how much is paid', () => {
+    for (const payments of [
+      [],
+      [pay('p1', 'b', 'a', 3000)],
+      [pay('p1', 'b', 'a', 10000), pay('p2', 'c', 'a', 2500)],
+      [pay('p1', 'b', 'a', 20000)], // deliberate overpayment
+    ]) {
+      const rows = computeBalances(withPayments(payments));
+      expect(rows.reduce((sum, r) => sum + r.outstanding, 0)).toBe(0);
+    }
+  });
+
+  it('lets an overpayment flip who is owed', () => {
+    const rows = computeBalances(withPayments([pay('p1', 'b', 'a', 15000)]));
+    expect(find(rows, 'Ben').outstanding).toBe(5000);   // paid $50 too much
+    expect(find(rows, 'Ana').outstanding).toBe(0);
+  });
+
+  it('ignores deleted payments', () => {
+    const rows = computeBalances({
+      ...ledgerOf([night]),
+      payments: [{ ...pay('p1', 'b', 'a', 10000), deleted: true }],
+    });
+    expect(find(rows, 'Ben').outstanding).toBe(-10000);
+  });
+
+  it('feeds a settle-up plan that reflects what is already paid', () => {
+    const rows = computeBalances(withPayments([pay('p1', 'b', 'a', 10000)]));
+    const { transfers } = settle(new Map(rows.map((r) => [r.player.id, r.outstanding])));
+    expect(transfers).toHaveLength(1);
+    expect(transfers[0]).toEqual({ from: 'c', to: 'a', amount: 5000 });
   });
 });

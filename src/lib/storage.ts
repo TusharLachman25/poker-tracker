@@ -13,6 +13,7 @@ export const defaultSettings = (): Ledger['settings'] => ({
 export const emptyLedger = (): Ledger => ({
   players: [],
   sessions: [],
+  payments: [],
   settings: defaultSettings(),
 });
 
@@ -39,7 +40,12 @@ export const loadLedger = (): Ledger => {
   const ledger = read(LEDGER_KEY, emptyLedger());
   // `read` replaces top-level keys wholesale, so a ledger saved before a
   // setting existed would come back missing it. Fill any gaps here.
-  return { ...ledger, settings: { ...defaultSettings(), ...ledger.settings } };
+  return {
+    ...ledger,
+    // Ledgers saved before payments existed have no such array.
+    payments: ledger.payments ?? [],
+    settings: { ...defaultSettings(), ...ledger.settings },
+  };
 };
 export const saveLedger = (ledger: Ledger): void => write(LEDGER_KEY, ledger);
 
@@ -73,6 +79,14 @@ export function validateLedger(value: unknown): Ledger | null {
   const sessions = v.sessions.filter(
     (s) => s && typeof s.id === 'string' && typeof s.date === 'string' && Array.isArray(s.entries),
   );
+  const payments = (v.payments ?? []).filter(
+    (p) =>
+      p &&
+      typeof p.id === 'string' &&
+      typeof p.from === 'string' &&
+      typeof p.to === 'string' &&
+      Number.isFinite(Number(p.amount)),
+  );
 
   return {
     players: players.map((p) => ({ ...p, updatedAt: p.updatedAt ?? Date.now() })),
@@ -85,6 +99,12 @@ export function validateLedger(value: unknown): Ledger | null {
         buyIn: Number(e.buyIn) || 0,
         cashOut: Number(e.cashOut) || 0,
       })),
+    })),
+    payments: payments.map((p) => ({
+      ...p,
+      amount: Math.abs(Math.round(Number(p.amount))) || 0,
+      date: typeof p.date === 'string' ? p.date : '',
+      updatedAt: p.updatedAt ?? Date.now(),
     })),
     settings: { ...defaultSettings(), ...(v.settings ?? {}) },
   };

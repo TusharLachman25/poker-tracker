@@ -1,4 +1,13 @@
-import { activePlayers, entryNet, isLive, sortedSessions, activeSessions } from './stats';
+import {
+  activePayments,
+  activePlayers,
+  computeBalances,
+  entryNet,
+  isLive,
+  sortedPayments,
+  sortedSessions,
+  activeSessions,
+} from './stats';
 import { validateLedger } from './storage';
 import { GAME_LABELS, type Ledger, type PlayerStats } from './types';
 
@@ -94,6 +103,35 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
         s.roi !== null ? (s.roi * 100).toFixed(1) : '',
       ].join(','),
     );
+  }
+
+  const payments = sortedPayments(activePayments(ledger));
+  if (payments.length > 0) {
+    lines.push('');
+    lines.push(['Payment date', 'From', 'To', 'Amount', 'Note'].join(','));
+    for (const p of payments) {
+      lines.push(
+        [
+          cell(p.date),
+          cell(names.get(p.from) ?? 'Unknown'),
+          cell(names.get(p.to) ?? 'Unknown'),
+          amount(p.amount),
+          cell(p.note ?? ''),
+        ].join(','),
+      );
+    }
+  }
+
+  // What's left after payments — the number people actually care about.
+  const balances = computeBalances(ledger).filter((b) => b.outstanding !== 0);
+  if (balances.length > 0) {
+    lines.push('');
+    lines.push(['Player', 'Net', 'Paid out', 'Received', 'Still owed (+) / still owes (-)'].join(','));
+    for (const b of balances) {
+      lines.push(
+        [cell(b.player.name), amount(b.net), amount(b.paid), amount(b.received), amount(b.outstanding)].join(','),
+      );
+    }
   }
 
   return deliver(`poker-tracker-${stamp()}.csv`, lines.join('\n'), 'text/csv');
