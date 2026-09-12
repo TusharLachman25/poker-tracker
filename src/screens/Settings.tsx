@@ -5,10 +5,8 @@ import { CheckIcon, DownloadIcon, SyncIcon, UploadIcon } from '../components/ico
 import { exportCsv, exportJson, pickAndImport } from '../lib/exchange';
 import { activePlayers, computeStats, groupSummary } from '../lib/stats';
 import { useStore } from '../lib/store';
-import { formatGroupCode, generateGroupCode, parseGroupCode, createRemote, pull } from '../lib/sync';
+import { MIN_PASSWORD, configFor, createRemote, pull, validateGroup } from '../lib/sync';
 import { emptyLedger } from '../lib/storage';
-import { bakedProject, bakedSyncConfig, hasBakedProject } from '../lib/env';
-import type { SyncConfig } from '../lib/types';
 import { syncNow } from '../lib/useSync';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'JPY', 'SGD', 'AED', 'BRL', 'MXN', 'ZAR'];
@@ -183,52 +181,52 @@ function SyncSection() {
   const [copied, setCopied] = useState(false);
 
   if (!sync) {
-    // This build ships with the group's details, so rejoining is one tap.
-    const baked = bakedSyncConfig();
     return (
       <>
         <div className="section-label">Share with your friends</div>
         <div className="card card-pad stack-sm">
           <p className="hint">
-            {baked
-              ? 'This device is disconnected, so its sessions stay local. Rejoin and it goes back on the group ledger.'
-              : 'Right now this ledger only lives on this device. Connect a free Supabase project and everyone in the group sees the same numbers, on any phone.'}
+            Right now this ledger only lives on this device. Join your group and everyone sees the
+            same numbers, on any phone.
           </p>
-          {baked ? (
-            <button className="btn btn-primary btn-block" onClick={() => setSync(baked)}>
-              <SyncIcon />
-              Rejoin the group
-            </button>
-          ) : (
-            <button className="btn btn-primary btn-block" onClick={() => setSetupOpen(true)}>
-              <SyncIcon />
-              Set up sharing
-            </button>
-          )}
-          {!baked ? (
-            <p className="hint">Takes about five minutes. See SETUP.md in the project folder.</p>
-          ) : null}
+          <button className="btn btn-primary btn-block" onClick={() => setSetupOpen(true)}>
+            <SyncIcon />
+            Set up sharing
+          </button>
+          <p className="hint">
+            You&apos;ll need the project URL and anon key, plus the group name and password, from
+            whoever set the group up. See SETUP.md.
+          </p>
         </div>
         {setupOpen ? <SyncSetupSheet onClose={() => setSetupOpen(false)} /> : null}
       </>
     );
   }
 
-  const code = formatGroupCode(sync);
+  // Everything a friend needs to join, in one message worth pasting into a chat.
+  const invite = `Join our poker group "${sync.groupName}"
+
+Open ${typeof location !== 'undefined' ? location.origin + location.pathname : 'the app'}
+Then: Settings -> Set up sharing -> Join a group
+
+Group name: ${sync.groupName}
+Password: ${sync.secret}
+Project URL: ${sync.url}
+Anon key: ${sync.anonKey}`;
 
   return (
     <>
       <div className="section-label">Shared group</div>
       <div className="card card-pad stack-sm">
-        <Field label="Group code" hint="Anyone with this code can read and edit the group's numbers.">
-          <input className="input input-code" readOnly value={code} onFocus={(e) => e.target.select()} />
+        <Field label="Group" hint="Anyone with the name and password can read and edit these numbers.">
+          <input className="input" readOnly value={sync.groupName} onFocus={(e) => e.target.select()} />
         </Field>
 
         <button
           className="btn btn-block"
           onClick={async () => {
             try {
-              await navigator.clipboard.writeText(code);
+              await navigator.clipboard.writeText(invite);
               setCopied(true);
               setTimeout(() => setCopied(false), 1800);
             } catch {
@@ -237,7 +235,7 @@ function SyncSection() {
           }}
         >
           {copied ? <CheckIcon /> : null}
-          {copied ? 'Copied' : 'Copy group code'}
+          {copied ? 'Copied' : 'Copy invite for a friend'}
         </button>
 
         <button
@@ -275,41 +273,38 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
   const setSync = useStore((s) => s.setSync);
   const mergeIn = useStore((s) => s.mergeIn);
 
-  const [url, setUrl] = useState(bakedProject.url);
-  const [anonKey, setAnonKey] = useState(bakedProject.anonKey);
-  const [joinCode, setJoinCode] = useState('');
+  const [url, setUrl] = useState('');
+  const [anonKey, setAnonKey] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'create' | 'join'>('create');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const credsReady = url.trim().startsWith('http') && anonKey.trim().length > 20;
+  const groupReady = validateGroup(groupName, password) === null;
 
-  async function handleCreate() {
-    setBusy(true);
-    setError('');
-    try {
-      const { ledgerId, secret } = generateGroupCode();
-      const config: SyncConfig = { url: url.trim(), anonKey: anonKey.trim(), ledgerId, secret };
-      await createRemote(config, ledger);
-      setSync(config);
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
+  async function submit() {
+    const problem = validateGroup(groupName, password);
+    if (problem) {
+      setError(problem);
+      return;
     }
-  }
 
-  async function handleJoin() {
     setBusy(true);
     setError('');
     try {
-      const parsed = parseGroupCode(joinCode);
-      if (!parsed) throw new Error('That code doesn’t look right. It should be 6 characters, a dash, then 10.');
-      const config: SyncConfig = { url: url.trim(), anonKey: anonKey.trim(), ...parsed };
-      const remote = await pull(config);
-      setSync(config);
-      mergeIn(remote);
+      const config = configFor({ url, anonKey }, groupName, password);
+      if (mode === 'create') {
+        await createRemote(config, ledger);
+        setSync(config);
+      } else {
+        // Pull before saving, so a wrong password doesn't leave the device
+        // pointed at a group it can't reach.
+        const remote = await pull(config);
+        setSync(config);
+        mergeIn(remote);
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -321,82 +316,105 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet title="Set up sharing" onClose={onClose}>
       <div className="stack">
-        {hasBakedProject ? (
-          <div className="banner banner-ok">
-            <span>✓</span>
-            <span>
-              This build already has the group&apos;s Supabase project in it — you only need the
-              group code.
-            </span>
-          </div>
-        ) : (
-          <>
-            <div className="banner banner-info">
-              <span>ℹ️</span>
-              <span>
-                You need a free Supabase project — one person makes it, then shares the two values
-                below plus the group code with everyone else. Step-by-step instructions are in
-                SETUP.md.
-              </span>
-            </div>
+        <div className="banner banner-info">
+          <span>ℹ️</span>
+          <span>
+            You need a free Supabase project — one person makes it, then shares the two values
+            below, plus the group name and password, with everyone else. Step-by-step instructions
+            are in SETUP.md.
+          </span>
+        </div>
 
-            <Field label="Project URL">
-              <input
-                className="input"
-                placeholder="https://xxxxx.supabase.co"
-                inputMode="url"
-                autoCapitalize="off"
-                autoCorrect="off"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-            </Field>
+        <Field label="Project URL">
+          <input
+            className="input"
+            placeholder="https://xxxxx.supabase.co"
+            inputMode="url"
+            autoCapitalize="off"
+            autoCorrect="off"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </Field>
 
-            <Field
-              label="Anon public key"
-              hint="Settings → API → anon public. Safe to share with your friends."
-            >
-              <input
-                className="input"
-                placeholder="eyJhbGciOi…"
-                autoCapitalize="off"
-                autoCorrect="off"
-                value={anonKey}
-                onChange={(e) => setAnonKey(e.target.value)}
-              />
-            </Field>
-          </>
-        )}
+        <Field
+          label="Anon public key"
+          hint="Settings → API → anon public. Safe to share with your friends."
+        >
+          <input
+            className="input"
+            placeholder="eyJhbGciOi…"
+            autoCapitalize="off"
+            autoCorrect="off"
+            value={anonKey}
+            onChange={(e) => setAnonKey(e.target.value)}
+          />
+        </Field>
 
         <div className="row" style={{ gap: 6 }}>
           <button
             className={`btn grow ${mode === 'create' ? 'btn-primary' : ''}`.trim()}
-            onClick={() => setMode('create')}
+            onClick={() => {
+              setMode('create');
+              setError('');
+            }}
           >
             Start a group
           </button>
           <button
             className={`btn grow ${mode === 'join' ? 'btn-primary' : ''}`.trim()}
-            onClick={() => setMode('join')}
+            onClick={() => {
+              setMode('join');
+              setError('');
+            }}
           >
             Join a group
           </button>
         </div>
 
-        {mode === 'join' ? (
-          <Field label="Group code">
-            <input
-              className="input input-code"
-              placeholder="ABC123-DEF456GHJK"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value)}
-            />
-          </Field>
-        ) : (
+        <Field
+          label="Group name"
+          hint={
+            mode === 'create'
+              ? 'What your friends will type to find the group.'
+              : 'Type it the way it was given to you — capitals and spacing don’t matter.'
+          }
+        >
+          <input
+            className="input"
+            placeholder="Friday Night Crew"
+            autoCapitalize="words"
+            autoCorrect="off"
+            value={groupName}
+            onChange={(e) => setGroupName(e.target.value)}
+          />
+        </Field>
+
+        <Field
+          label="Password"
+          hint={
+            mode === 'create'
+              ? `At least ${MIN_PASSWORD} characters. Everyone in the group uses this to join.`
+              : undefined
+          }
+        >
+          <input
+            className="input"
+            type="password"
+            placeholder={`${MIN_PASSWORD}+ characters`}
+            autoCapitalize="off"
+            autoCorrect="off"
+            autoComplete={mode === 'create' ? 'new-password' : 'current-password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+
+        {mode === 'create' ? (
           <p className="hint">
-            This uploads what&apos;s already on this device and gives you a code to send round.
+            This uploads what&apos;s already on this device and becomes the group everyone joins.
           </p>
-        )}
+        ) : null}
 
         {error ? (
           <div className="banner banner-error">
@@ -407,8 +425,8 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
 
         <button
           className="btn btn-primary btn-block"
-          disabled={busy || !credsReady || (mode === 'join' && joinCode.trim().length < 16)}
-          onClick={mode === 'create' ? handleCreate : handleJoin}
+          disabled={busy || !credsReady || !groupReady}
+          onClick={() => void submit()}
         >
           {busy ? 'Working…' : mode === 'create' ? 'Create group' : 'Join group'}
         </button>

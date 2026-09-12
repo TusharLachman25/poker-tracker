@@ -3,33 +3,53 @@ import { mergeLedgers } from './merge';
 import { validateLedger } from './storage';
 import type { Ledger, SyncConfig } from './types';
 
-/** Unambiguous alphabet: no O/0, I/1/l — these codes get read aloud and retyped. */
-const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-
-function randomCode(length: number): string {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return [...bytes].map((b) => ALPHABET[b % ALPHABET.length]).join('');
-}
+/** The server enforces this too — see supabase/schema.sql. */
+export const MIN_PASSWORD = 8;
+const MAX_NAME = 60;
 
 /**
- * A group code is `<ledgerId>-<secret>` — one string to share, which both
- * names the ledger and proves you're allowed to open it.
+ * Turn a group name into the key its ledger is stored under.
+ *
+ * Everyone in the group types the name by hand, so this forgives the
+ * differences that don't matter: case, spacing, punctuation. "Friday Night
+ * Crew", "friday night crew" and "Friday-Night Crew!" all reach the same
+ * ledger.
  */
-export function generateGroupCode(): { ledgerId: string; secret: string; code: string } {
-  const ledgerId = randomCode(6);
-  const secret = randomCode(10);
-  return { ledgerId, secret, code: `${ledgerId}-${secret}` };
+export function groupId(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // drop accents, so "Jose" and "José" match
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAX_NAME);
 }
 
-export function parseGroupCode(raw: string): { ledgerId: string; secret: string } | null {
-  const cleaned = raw.trim().toUpperCase().replace(/\s+/g, '');
-  const match = /^([A-Z2-9]{6})-?([A-Z2-9]{10})$/.exec(cleaned);
-  if (!match) return null;
-  return { ledgerId: match[1], secret: match[2] };
+/** A human-readable problem with the name/password, or null if they're fine. */
+export function validateGroup(name: string, password: string): string | null {
+  if (!name.trim()) return 'Give the group a name.';
+  if (!groupId(name)) return 'That name needs at least one letter or number.';
+  if (password.length < MIN_PASSWORD) {
+    return `The password needs at least ${MIN_PASSWORD} characters.`;
+  }
+  return null;
 }
 
-export const formatGroupCode = (cfg: SyncConfig): string => `${cfg.ledgerId}-${cfg.secret}`;
+/** Build the stored config from what the person typed. */
+export function configFor(
+  project: { url: string; anonKey: string },
+  name: string,
+  password: string,
+): SyncConfig {
+  return {
+    url: project.url.trim(),
+    anonKey: project.anonKey.trim(),
+    ledgerId: groupId(name),
+    secret: password,
+    groupName: name.trim(),
+  };
+}
 
 let cached: { key: string; client: SupabaseClient } | null = null;
 
@@ -63,7 +83,15 @@ export async function createRemote(cfg: SyncConfig, ledger: Ledger): Promise<voi
     p_secret: cfg.secret,
     p_data: ledger,
   });
-  if (error) fail('Could not create the group', error);
+  if (error) {
+    const message = (error as { message?: string }).message ?? '';
+    if (/already taken|unique/i.test(message)) {
+      throw new Error(
+        'A group with that name already exists. Pick a different name, or join that one instead.',
+      );
+    }
+    fail('Could not create the group', error);
+  }
 }
 
 export async function pull(cfg: SyncConfig): Promise<Ledger> {
@@ -71,7 +99,13 @@ export async function pull(cfg: SyncConfig): Promise<Ledger> {
     p_id: cfg.ledgerId,
     p_secret: cfg.secret,
   });
-  if (error) fail('Could not reach the group', error);
+  if (error) {
+    const message = (error as { message?: string }).message ?? '';
+    if (/invalid group|password/i.test(message)) {
+      throw new Error("That group name and password don't match a group.");
+    }
+    fail('Could not reach the group', error);
+  }
   const ledger = validateLedger(data);
   if (!ledger) throw new Error('The group data on the server looks corrupted.');
   return ledger;

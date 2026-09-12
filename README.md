@@ -92,8 +92,7 @@ sdk.dir=C:/Users/you/AppData/Local/Android/Sdk
 npm run deploy
 ```
 
-Builds and force-pushes `dist/` to the `gh-pages` branch. Your local `.env` is
-baked into that build but never committed.
+Builds and force-pushes `dist/` to the `gh-pages` branch.
 
 Phones running the installed web app pick up the new version on next launch.
 The Android app doesn't auto-update — rebuild the APK and re-send it, or point
@@ -120,32 +119,26 @@ then follow the Capacitor signing guide:
 
 ## Sharing between friends
 
-The Supabase project and group code are **baked into the build**, so your
-friends install the app and are already on the group ledger — no settings, no
-pasting codes.
+Each phone keeps its own copy until you connect it to a group. One person
+creates a free Supabase project and a group; everyone else joins with a code.
+See **[SETUP.md](SETUP.md)** for the click-by-click version. Roughly:
 
-Set it up once:
+1. One person creates a Supabase project and runs `supabase/schema.sql`.
+2. In the app: **Settings → Set up sharing**, paste the project URL and anon
+   key, pick a **group name and password**, tap **Create group**.
+3. **Settings → Copy invite for a friend** gives you one message with
+   everything the others need. They tap **Join a group** instead.
 
-1. Create a free Supabase project and run `supabase/schema.sql` in its SQL
-   editor — see **[SETUP.md](SETUP.md)**.
-2. `cp .env.example .env` and fill in the project URL and anon key.
-3. `npm run dev`, then **Settings → Set up sharing → Start a group**. Copy the
-   group code it gives you into `VITE_GROUP_CODE` in `.env`.
-4. `npm run deploy`, and rebuild the APK. Every install from then on joins that
-   group automatically.
-
-Leave `.env` empty and the app is simply a local-only tracker; the manual setup
-screen appears instead.
+Nothing is baked into the build. The site is public, so anything shipped in the
+bundle would be readable by anyone who found the URL — keeping the credentials
+out means only people you've invited can see your numbers. Group names are
+guessable, so the password is what actually protects the group; pick a real one.
 
 Edits merge rather than overwrite, so two people can log different sessions on
 different phones and nobody's work disappears. Sync runs when the app opens,
 regains focus, and shortly after any change.
 
-> **Worth knowing:** the site is public, and anything baked into the build ships
-> to the browser — so anyone who finds the URL can read and edit the group's
-> numbers. That's usually fine for a home game. If you'd rather not have that,
-> leave `VITE_GROUP_CODE` out: friends then paste one short code the first time
-> they open it, and everything else is still automatic.
+Free-tier Supabase is far more than a home game will ever need.
 
 ---
 

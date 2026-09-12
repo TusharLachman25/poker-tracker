@@ -4,10 +4,13 @@
 -- Paste this whole file into your Supabase project's SQL Editor and run it.
 -- Takes about ten seconds. See SETUP.md for the click-by-click version.
 --
--- Design note: the anon key ships inside the app, so the table itself is
+-- Design note: the anon key is meant to be public, so the table itself is
 -- locked down and all access goes through three SECURITY DEFINER functions
--- that require the group's secret. Without the secret you cannot read, write,
--- or even confirm that a given group id exists.
+-- that each require the group's password. Without it you cannot read, write,
+-- or even confirm that a given group exists.
+--
+-- Group names are guessable by design, so the password is the only thing
+-- protecting a group -- hence the 8-character minimum enforced below.
 -- ===========================================================================
 
 create table if not exists public.ledgers (
@@ -22,7 +25,7 @@ create table if not exists public.ledgers (
 alter table public.ledgers enable row level security;
 
 -- --------------------------------------------------------------------------
--- ledger_create: claim a new group id
+-- ledger_create: claim a new group name
 -- --------------------------------------------------------------------------
 create or replace function public.ledger_create(p_id text, p_secret text, p_data jsonb)
 returns void
@@ -32,14 +35,14 @@ set search_path = public
 as $$
 begin
   if length(coalesce(p_secret, '')) < 8 then
-    raise exception 'secret too short';
+    raise exception 'password too short';
   end if;
 
   insert into public.ledgers (id, secret, data)
   values (upper(p_id), p_secret, coalesce(p_data, '{}'::jsonb));
 exception
   when unique_violation then
-    raise exception 'that group code is already taken';
+    raise exception 'that group name is already taken';
 end;
 $$;
 
@@ -60,7 +63,7 @@ begin
   where id = upper(p_id) and secret = p_secret;
 
   if not found then
-    raise exception 'invalid group code';
+    raise exception 'invalid group name or password';
   end if;
 
   return result;
@@ -82,7 +85,7 @@ begin
   where id = upper(p_id) and secret = p_secret;
 
   if not found then
-    raise exception 'invalid group code';
+    raise exception 'invalid group name or password';
   end if;
 end;
 $$;

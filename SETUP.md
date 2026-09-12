@@ -4,8 +4,11 @@ Out of the box the app keeps everything on your own phone. That's fine for one
 person, but you want the group to see the same numbers — so this connects the
 app to a free Supabase project that holds one shared ledger.
 
-**You do this once. Your friends do nothing** — the project and group code get
-baked into the build they install.
+**One person does steps 1–3. Everyone else only does step 5.**
+
+Nothing is stored in the app itself: the site is public, so credentials shipped
+in the build would be readable by anyone who found the URL. Keeping them out
+means only people you've sent the code to can see your numbers.
 
 Budget about five minutes. The free tier is far more than a home game needs, and
 there's no credit card.
@@ -44,43 +47,38 @@ and three functions, not data.
 >
 > The **service_role** key is the dangerous one. Never put that in the app.
 
-## 4. Bake them into the build
+## 4. Start the group
 
-In the project folder:
+In the app:
 
-```bash
-cp .env.example .env
-```
+1. **Settings** → **Set up sharing**
+2. Paste the Project URL and the anon key
+3. Leave it on **Start a group**
+4. Pick a **group name** and a **password**, then tap **Create group**
 
-Put the Project URL and anon key into `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_ANON_KEY`. `.env` is gitignored, so it stays on your machine.
+The name is what your friends type to find the group — "Friday Night Crew" is
+the idea. The password is at least 8 characters and is what actually protects
+it, so don't make it `poker123`.
 
-## 5. Create the group and record its code
+This uploads whatever is already on your phone, so if you've been logging
+sessions already, nothing is lost.
 
-```bash
-npm run dev
-```
+## 5. Everyone else joins
 
-Open the app, go to **Settings → Set up sharing**. The URL and key are already
-filled in, so just tap **Create group**. You'll get a code like
-`K7QMPX-R4T9WBNZ2H`. This uploads whatever you've already logged, so nothing is
-lost.
+In the app, **Settings → Copy invite for a friend** puts everything they need
+into one message you can paste into your group chat: the site link, the group
+name and password, and the two Supabase values.
 
-Paste that code into `VITE_GROUP_CODE` in `.env`.
+On their phone: **Settings → Set up sharing → Join a group**, fill in the four
+fields, tap **Join group**.
 
-## 6. Ship it
+Capitals and spacing in the group name don't matter — "friday night crew" finds
+the same group as "Friday Night Crew". The password is exact.
 
-```bash
-npm run deploy        # publishes the web app
-npm run android:apk   # rebuilds the Android app
-```
+They'll pull down the group's history, and anything they'd already logged
+locally gets merged in rather than thrown away.
 
-Every install from here on joins the group on first launch. Your friends just
-open the link (or the APK) and start logging sessions.
-
-> If you'd rather the code weren't public — the site is open to anyone with the
-> URL — leave `VITE_GROUP_CODE` empty. Friends then paste the code once on first
-> open, and everything else still happens for them.
+---
 
 ---
 
@@ -98,30 +96,33 @@ open the link (or the APK) and start logging sessions.
 
 ## Who can see your numbers
 
-Anyone holding the group code can read and edit that group's ledger. That's the
-intended design — it's your poker group, not a bank. Treat the code like a
-WhatsApp invite link.
+Anyone with the group name and password can read and edit that group's ledger.
+That's the intended design — it's your poker group, not a bank.
 
-If a code gets out, make a new group: **Settings → Disconnect this device**, then
-**Set up sharing → Start a group**, and send the new code round. The old row stays
-in your Supabase project until you delete it from the Table Editor.
+Group names are easy to guess, so the password is doing the real work. Pick
+something that isn't obvious, and don't reuse a password you care about.
+
+If it gets out, make a new group: **Settings → Disconnect this device**, then
+**Set up sharing → Start a group** with a new name. The old row stays in your
+Supabase project until you delete it from the Table Editor.
 
 ---
 
 ## If something goes wrong
 
-**"invalid group code"** — the code, URL, or key doesn't match. Codes are six
-characters, a dash, then ten. Check for a stray space when pasting.
+**"That group name and password don't match a group"** — usually a typo in the
+password, which is case-sensitive and exact. The group name is forgiving about
+capitals and spacing, but it does have to be the same words.
 
-**"that group code is already taken"** — you hit the (astronomically unlikely)
-case of a duplicate. Tap **Create group** again for a fresh code.
+**"A group with that name already exists"** — someone in your Supabase project
+already used it. Pick a different name, or join the existing group instead.
 
 **"Could not reach the group"** — usually no network. It can also mean the SQL
 in step 2 didn't run; go back to the SQL Editor and check the `ledgers` table
 exists under **Table Editor**.
 
-**Nothing syncs and there's no error** — check Settings shows a group code. If it
-offers "Set up sharing" instead, that device isn't connected.
+**Nothing syncs and there's no error** — check Settings shows your group name. If
+it offers "Set up sharing" instead, that device isn't connected.
 
 **Numbers look wrong after joining** — a device joining a group merges its local
 data in. If someone had test sessions on their phone, those are now in the group.

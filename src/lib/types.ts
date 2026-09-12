@@ -76,8 +76,12 @@ export interface Ledger {
 export interface SyncConfig {
   url: string;
   anonKey: string;
+  /** Slug derived from the group name; the key the ledger is stored under. */
   ledgerId: string;
+  /** The group password. */
   secret: string;
+  /** The name as typed, kept for display since the id is a slug. */
+  groupName: string;
 }
 
 // ---------------------------------------------------------------------------

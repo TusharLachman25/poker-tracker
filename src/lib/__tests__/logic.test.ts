@@ -3,6 +3,7 @@ import { money, parseMoney, signedMoney, toInput } from '../money';
 import { niceStep } from '../../components/ProfitChart';
 import { computeStats, sessionTotals } from '../stats';
 import { settle } from '../settle';
+import { MIN_PASSWORD, configFor, groupId, validateGroup } from '../sync';
 import type { Ledger, Session } from '../types';
 
 const player = (id: string, name: string) => ({
@@ -239,5 +240,49 @@ describe('chart axis steps', () => {
       const mantissa = step / 10 ** Math.floor(Math.log10(step));
       expect([1, 2, 5]).toContain(Math.round(mantissa));
     }
+  });
+});
+
+describe('group name and password', () => {
+  it('forgives case, spacing and punctuation when joining', () => {
+    const canonical = groupId('Friday Night Crew');
+    expect(canonical).toBe('friday-night-crew');
+    for (const typed of [
+      'friday night crew',
+      '  Friday Night Crew  ',
+      'FRIDAY NIGHT CREW',
+      'Friday-Night Crew!',
+      'Friday   Night   Crew',
+    ]) {
+      expect(groupId(typed)).toBe(canonical);
+    }
+  });
+
+  it('strips accents so the name is typeable on any keyboard', () => {
+    expect(groupId('José’s Game')).toBe(groupId("Jose's Game"));
+  });
+
+  it('keeps different groups apart', () => {
+    expect(groupId('Friday Crew')).not.toBe(groupId('Saturday Crew'));
+  });
+
+  it('rejects names that carry no letters or digits', () => {
+    expect(groupId('!!!')).toBe('');
+    expect(validateGroup('!!!', 'longenough')).toBeTruthy();
+  });
+
+  it('requires a password the server will accept', () => {
+    expect(validateGroup('Friday Night Crew', 'short')).toContain(String(MIN_PASSWORD));
+    expect(validateGroup('', 'longenough')).toBeTruthy();
+    expect(validateGroup('Friday Night Crew', 'longenough')).toBeNull();
+  });
+
+  it('builds a config both sides of the group agree on', () => {
+    const project = { url: 'https://x.supabase.co', anonKey: 'key' };
+    const mine = configFor(project, 'Friday Night Crew', 'aces-high-99');
+    const theirs = configFor(project, 'friday night crew', 'aces-high-99');
+    expect(theirs.ledgerId).toBe(mine.ledgerId);
+    expect(theirs.secret).toBe(mine.secret);
+    expect(mine.groupName).toBe('Friday Night Crew'); // display keeps their capitals
   });
 });

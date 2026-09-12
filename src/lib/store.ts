@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { mergeLedgers } from './merge';
-import { bakedSyncConfig } from './env';
-import { emptyLedger, hasOptedOut, loadLedger, loadSync, saveLedger, saveSync } from './storage';
+import { emptyLedger, loadLedger, loadSync, saveLedger, saveSync } from './storage';
 import type { Entry, ID, Ledger, Player, Session, Settings, SyncConfig } from './types';
 
 /** Chart-friendly palette: distinct hues, all legible on the dark felt background. */
@@ -49,21 +48,10 @@ function commit(set: (partial: Partial<Store>) => void, ledger: Ledger) {
   set({ ledger });
 }
 
-/**
- * What this device syncs with: whatever it saved last, otherwise the group
- * baked into the build — so a friend's first launch is already connected.
- * An explicit disconnect is respected and wins over the baked-in group.
- */
-function initialSync() {
-  return loadSync() ?? (hasOptedOut() ? null : bakedSyncConfig());
-}
-
-const startingSync = initialSync();
-
 export const useStore = create<Store>((set, get) => ({
   ledger: loadLedger(),
-  sync: startingSync,
-  syncState: startingSync ? 'idle' : 'off',
+  sync: loadSync(),
+  syncState: loadSync() ? 'idle' : 'off',
   syncMessage: '',
   lastSyncedAt: null,
 

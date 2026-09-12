@@ -2,7 +2,6 @@ import type { Ledger, SyncConfig } from './types';
 
 const LEDGER_KEY = 'poker-tracker/ledger/v1';
 const SYNC_KEY = 'poker-tracker/sync/v1';
-const OPTOUT_KEY = 'poker-tracker/sync-optout/v1';
 
 export const defaultSettings = (): Ledger['settings'] => ({
   currency: 'USD',
@@ -55,27 +54,10 @@ export const loadSync = (): SyncConfig | null => {
 
 export const saveSync = (config: SyncConfig | null): void => {
   try {
-    if (config) {
-      localStorage.setItem(SYNC_KEY, JSON.stringify(config));
-      localStorage.removeItem(OPTOUT_KEY);
-    } else {
-      localStorage.removeItem(SYNC_KEY);
-      // Remember the disconnect. Without this, a build with the group baked in
-      // would silently reconnect on the next launch and "Disconnect" would
-      // look broken.
-      localStorage.setItem(OPTOUT_KEY, '1');
-    }
+    if (config) localStorage.setItem(SYNC_KEY, JSON.stringify(config));
+    else localStorage.removeItem(SYNC_KEY);
   } catch {
     /* ignore */
-  }
-};
-
-/** True once this device has explicitly disconnected from the shared group. */
-export const hasOptedOut = (): boolean => {
-  try {
-    return localStorage.getItem(OPTOUT_KEY) === '1';
-  } catch {
-    return false;
   }
 };
 
