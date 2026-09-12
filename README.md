@@ -19,8 +19,10 @@ another bullet in one tap, so a normal night only needs the cash-outs typed in.
 The editor adds it up live and warns you when cash-outs don't match buy-ins,
 which is almost always a typo rather than a miracle.
 
-**Payments** — who owes who, as the shortest list of payments that clears
-everyone. Record one (in full or in part) and it comes straight off the
+**Payments** — who owes who, as the fewest payments that clear everyone.
+Balances are netted first, so nobody pays and gets paid on the same night: if
+Kabir owes Tushar $10 and Sid $10, and Sid owes Tushar $3, it settles as Kabir
+paying Tushar $13 and Sid $7. Record one (in full or in part) and it comes straight off the
 outstanding totals, with a history of everything already settled. A session
 can also be settled on its own, straight from the session editor.
 

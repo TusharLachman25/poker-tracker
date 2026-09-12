@@ -503,3 +503,98 @@ describe('settings survive a sync', () => {
     expect(twice.settings.currency).toBe('AUD');
   });
 });
+
+describe('settling in as few payments as possible', () => {
+  /** Replays the plan and checks everyone ends exactly where they should. */
+  const clears = (nets: Map<string, number>, transfers: ReturnType<typeof settle>['transfers']) => {
+    const moved = new Map([...nets.keys()].map((id) => [id, 0]));
+    for (const t of transfers) {
+      moved.set(t.from, moved.get(t.from)! - t.amount);
+      moved.set(t.to, moved.get(t.to)! + t.amount);
+    }
+    return [...nets.entries()].every(([id, net]) => moved.get(id) === net);
+  };
+
+  it('nets a chain of debts down to one payer', () => {
+    // Kabir owes Tushar $10 and Sid $10; Sid owes Tushar $3.
+    // Expected: Kabir pays Tushar $13 and Sid $7 — not three payments.
+    const nets = new Map([['kabir', -2000], ['sid', 700], ['tushar', 1300]]);
+    const { transfers, leftover } = settle(nets);
+
+    expect(leftover).toBe(0);
+    expect(transfers).toHaveLength(2);
+    expect(clears(nets, transfers)).toBe(true);
+    expect(transfers.every((t) => t.from === 'kabir')).toBe(true);
+    expect(transfers.find((t) => t.to === 'tushar')?.amount).toBe(1300);
+    expect(transfers.find((t) => t.to === 'sid')?.amount).toBe(700);
+  });
+
+  it('never makes anyone both pay and get paid', () => {
+    const nets = new Map([['a', -2000], ['b', 700], ['c', 1300], ['d', -500], ['e', 500]]);
+    const { transfers } = settle(nets);
+    for (const id of nets.keys()) {
+      const pays = transfers.some((t) => t.from === id);
+      const receives = transfers.some((t) => t.to === id);
+      expect(pays && receives).toBe(false);
+    }
+  });
+
+  it('spots independent groups instead of chaining everyone together', () => {
+    // {a,b} and {c,d} each square off on their own: two payments, not three.
+    const nets = new Map([['a', 1000], ['b', -1000], ['c', 2500], ['d', -2500]]);
+    const { transfers } = settle(nets);
+    expect(transfers).toHaveLength(2);
+    expect(clears(nets, transfers)).toBe(true);
+  });
+
+  it('beats the plain biggest-first approach when a subset cancels out', () => {
+    // {b,c} cancel exactly, as do {a,d,e}. Best is 1 + 2 = 3 payments;
+    // matching biggest-against-biggest would take 4.
+    const nets = new Map([
+      ['a', 1000],
+      ['b', 600],
+      ['c', -600],
+      ['d', -400],
+      ['e', -600],
+    ]);
+    const { transfers } = settle(nets);
+    expect(transfers).toHaveLength(3);
+    expect(clears(nets, transfers)).toBe(true);
+  });
+
+  it('always clears the books exactly, on any shape of table', () => {
+    let seed = 7;
+    const random = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+
+    for (let round = 0; round < 200; round++) {
+      const count = 2 + Math.floor(random() * 7);
+      const nets = new Map<string, number>();
+      let running = 0;
+      for (let i = 0; i < count - 1; i++) {
+        const amount = Math.round((random() - 0.5) * 10000);
+        nets.set(`p${i}`, amount);
+        running += amount;
+      }
+      nets.set(`p${count - 1}`, -running); // forces the table to balance
+
+      const { transfers, leftover } = settle(nets);
+      const live = [...nets.values()].filter((v) => v !== 0).length;
+
+      expect(leftover).toBe(0);
+      expect(clears(nets, transfers)).toBe(true);
+      expect(transfers.length).toBeLessThanOrEqual(Math.max(live - 1, 0));
+      expect(transfers.every((t) => t.amount > 0)).toBe(true);
+    }
+  });
+
+  it('still reports a shortfall when the books do not balance', () => {
+    const { transfers, leftover } = settle(new Map([['a', 10000], ['b', -4000]]));
+    expect(transfers.reduce((s, t) => s + t.amount, 0)).toBe(4000);
+    expect(leftover).toBe(6000);
+  });
+
+  it('handles an all-square night', () => {
+    expect(settle(new Map([['a', 0], ['b', 0]])).transfers).toEqual([]);
+    expect(settle(new Map()).transfers).toEqual([]);
+  });
+});
