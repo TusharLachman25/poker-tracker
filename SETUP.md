@@ -57,7 +57,8 @@ In the app:
 4. Pick a **group name** and a **password**, then tap **Create group**
 
 The name is what your friends type to find the group — "Friday Night Crew" is
-the idea. The password is at least 8 characters and is what actually protects
+the idea. It's the same name the app shows everywhere, so pick the one you
+actually call your game. The password is at least 8 characters and is what actually protects
 it, so don't make it `poker123`.
 
 This uploads whatever is already on your phone, so if you've been logging

@@ -109,8 +109,15 @@ export interface Activity {
 }
 
 export interface Settings {
-  /** ISO 4217 code, e.g. "USD", "INR", "GBP". */
+  /** ISO 4217 code, e.g. "AUD", "USD", "GBP". */
   currency: string;
+  /**
+   * The group's name — the one thing it's called.
+   *
+   * When sharing is on this is also what friends type to join, so it is fixed
+   * for as long as the device is connected. There is deliberately no second,
+   * separate name for the game itself.
+   */
   groupName: string;
   /** Standard buy-in in cents. Pre-fills new sessions and drives the rebuy button. */
   defaultBuyIn: number;
@@ -134,8 +141,6 @@ export interface SyncConfig {
   ledgerId: string;
   /** The group password. */
   secret: string;
-  /** The name as typed, kept for display since the id is a slug. */
-  groupName: string;
 }
 
 // ---------------------------------------------------------------------------

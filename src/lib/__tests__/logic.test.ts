@@ -17,7 +17,7 @@ function ledgerOf(sessions: Session[]): Ledger {
     sessions,
     payments: [],
     activity: [],
-    settings: { currency: 'USD', groupName: 'Test', defaultBuyIn: 1000, defaultStakes: '0.05/0.10' },
+    settings: { currency: 'AUD', groupName: 'Test', defaultBuyIn: 1000, defaultStakes: '0.05/0.10' },
   };
 }
 
@@ -286,7 +286,9 @@ describe('group name and password', () => {
     const theirs = configFor(project, 'friday night crew', 'aces-high-99');
     expect(theirs.ledgerId).toBe(mine.ledgerId);
     expect(theirs.secret).toBe(mine.secret);
-    expect(mine.groupName).toBe('Friday Night Crew'); // display keeps their capitals
+    // The display name lives in the ledger, not the connection config — there
+    // is only ever one name for the group.
+    expect('groupName' in mine).toBe(false);
   });
 });
 

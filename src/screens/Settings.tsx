@@ -10,10 +10,12 @@ import { MIN_PASSWORD, configFor, createRemote, pull, validateGroup } from '../l
 import { emptyLedger } from '../lib/storage';
 import { syncNow } from '../lib/useSync';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'JPY', 'SGD', 'AED', 'BRL', 'MXN', 'ZAR'];
+// Default first, then the rest.
+const CURRENCIES = ['AUD', 'USD', 'GBP', 'EUR', 'NZD', 'CAD', 'INR', 'SGD', 'JPY', 'AED', 'ZAR', 'BRL', 'MXN'];
 
 export function Settings() {
   const ledger = useStore((s) => s.ledger);
+  const sync = useStore((s) => s.sync);
   const updateSettings = useStore((s) => s.updateSettings);
   const replaceLedger = useStore((s) => s.replaceLedger);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -25,14 +27,23 @@ export function Settings() {
 
   return (
     <div className="page">
-      <div className="section-label">Your game</div>
+      <div className="section-label">Your group</div>
       <div className="card card-pad stack">
-        <Field label="Group name">
+        <Field
+          label="Group name"
+          hint={
+            sync
+              ? "This is what your friends type to join, so it can't be changed while sharing is on."
+              : undefined
+          }
+        >
           <input
             className="input"
             value={ledger.settings.groupName}
             onChange={(e) => updateSettings({ groupName: e.target.value })}
             placeholder="Home Game"
+            readOnly={Boolean(sync)}
+            style={sync ? { color: 'var(--text-dim)' } : undefined}
           />
         </Field>
 
@@ -224,6 +235,7 @@ function IdentitySection() {
 
 function SyncSection() {
   const sync = useStore((s) => s.sync);
+  const groupName = useStore((s) => s.ledger.settings.groupName);
   const syncState = useStore((s) => s.syncState);
   const syncMessage = useStore((s) => s.syncMessage);
   const lastSyncedAt = useStore((s) => s.lastSyncedAt);
@@ -256,23 +268,24 @@ function SyncSection() {
   }
 
   // Everything a friend needs to join, in one message worth pasting into a chat.
-  const invite = `Join our poker group "${sync.groupName}"
+  const invite = `Join our poker group "${groupName}"
 
 Open ${typeof location !== 'undefined' ? location.origin + location.pathname : 'the app'}
 Then: Settings -> Set up sharing -> Join a group
 
-Group name: ${sync.groupName}
+Group name: ${groupName}
 Password: ${sync.secret}
 Project URL: ${sync.url}
 Anon key: ${sync.anonKey}`;
 
   return (
     <>
-      <div className="section-label">Shared group</div>
+      <div className="section-label">Sharing</div>
       <div className="card card-pad stack-sm">
-        <Field label="Group" hint="Anyone with the name and password can read and edit these numbers.">
-          <input className="input" readOnly value={sync.groupName} onFocus={(e) => e.target.select()} />
-        </Field>
+        <p className="hint">
+          Everyone in <b>{groupName}</b> sees the same numbers. Send a friend the invite below and
+          they&apos;re in.
+        </p>
 
         <button
           className="btn btn-block"
@@ -324,10 +337,12 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
   const ledger = useStore((s) => s.ledger);
   const setSync = useStore((s) => s.setSync);
   const mergeIn = useStore((s) => s.mergeIn);
+  const updateSettings = useStore((s) => s.updateSettings);
 
   const [url, setUrl] = useState('');
   const [anonKey, setAnonKey] = useState('');
-  const [groupName, setGroupName] = useState('');
+  // Creating a group starts from whatever this device already calls it.
+  const [groupName, setGroupName] = useState(ledger.settings.groupName);
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'create' | 'join'>('create');
   const [busy, setBusy] = useState(false);
@@ -347,8 +362,14 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
     setError('');
     try {
       const config = configFor({ url, anonKey }, groupName, password);
+      const name = groupName.trim();
+
       if (mode === 'create') {
-        await createRemote(config, ledger);
+        // The group's name lives in the ledger, so it reaches everyone who
+        // joins. Set it before uploading, or the first sync would carry the
+        // old one.
+        await createRemote(config, { ...ledger, settings: { ...ledger.settings, groupName: name } });
+        updateSettings({ groupName: name });
         setSync(config);
       } else {
         // Pull before saving, so a wrong password doesn't leave the device
@@ -356,6 +377,9 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
         const remote = await pull(config);
         setSync(config);
         mergeIn(remote);
+        // Joining adopts the group's name; fall back to what was typed only if
+        // the group never had one.
+        if (!remote.settings?.groupName) updateSettings({ groupName: name });
       }
       onClose();
     } catch (e) {
@@ -409,6 +433,7 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
             onClick={() => {
               setMode('create');
               setError('');
+              setGroupName(ledger.settings.groupName);
             }}
           >
             Start a group
@@ -418,6 +443,8 @@ function SyncSetupSheet({ onClose }: { onClose: () => void }) {
             onClick={() => {
               setMode('join');
               setError('');
+              // Joining needs the other group's name, not this device's.
+              setGroupName('');
             }}
           >
             Join a group

@@ -31,6 +31,15 @@ if (!chrome) {
   process.exit(1);
 }
 
+/**
+ * Money as rendered depends on the group's currency and the machine's locale
+ * ("$10", "A$10", "10,00 $"), so compare the sign and digits only.
+ */
+const amountIs = (text, expected) => {
+  const strip = (v) => (v ?? '').replace(/[^\d.,+-]/g, '').replace(/,/g, '');
+  return strip(text) === strip(expected);
+};
+
 let failures = 0;
 function check(label, actual, expected) {
   const ok = actual === expected;
@@ -128,9 +137,9 @@ try {
   );
 
   check('leaderboard is ordered by profit', standings.map((s) => s.name).join(','), 'Ana,Cy,Ben');
-  check('winner net keeps its cents', standings[0]?.net, '+$13.50');
-  check('middle net keeps its cents', standings[1]?.net, '-$3.50');
-  check('loser net is correct', standings[2]?.net, '-$10');
+  check('winner net keeps its cents', amountIs(standings[0]?.net, '+13.50'), true);
+  check('middle net keeps its cents', amountIs(standings[1]?.net, '-3.50'), true);
+  check('loser net is correct', amountIs(standings[2]?.net, '-10'), true);
 
   // --- Payments: who owes who, and paying it off ------------------------
   await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
@@ -230,7 +239,7 @@ try {
   check('the edit is recorded', Boolean(edit), true);
   // The row text begins with the avatar's initials, so match the phrase itself.
   check('and attributed to whoever made it', edit?.includes('Ana edited a session') ?? false, true);
-  check('with the old and new figures', edit?.includes('+$13.50') && edit?.includes('+$10'), true);
+  check('with the old and new figures', /13\.50.*→.*10/.test(edit ?? ''), true);
   check('naming the other player who moved', edit?.includes('Cy') ?? false, true);
   check('the original session log is still there', log.some((l) => l.includes('logged a session')), true);
   check('as is the payment', log.some((l) => l.includes('recorded a payment')), true);

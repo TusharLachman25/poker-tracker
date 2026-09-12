@@ -47,7 +47,6 @@ export function configFor(
     anonKey: project.anonKey.trim(),
     ledgerId: groupId(name),
     secret: password,
-    groupName: name.trim(),
   };
 }
 

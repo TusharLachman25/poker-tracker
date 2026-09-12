@@ -4,7 +4,7 @@ const LEDGER_KEY = 'poker-tracker/ledger/v1';
 const SYNC_KEY = 'poker-tracker/sync/v1';
 
 export const defaultSettings = (): Ledger['settings'] => ({
-  currency: 'USD',
+  currency: 'AUD',
   groupName: 'Home Game',
   defaultBuyIn: 1000, // $10.00
   defaultStakes: '0.05/0.10',

@@ -37,9 +37,12 @@ for a friendly group, not proof against someone determined.
 payments and outstanding balances), and optional cloud sync so the group shares
 one set of numbers.
 
-Defaults are set for a **$10 buy-in at 0.05/0.10 blinds**. Change the standard
-buy-in and the stakes label under **Settings → Your game**; amounts are kept to
-the cent throughout, so small-stakes results stay exact.
+Defaults are set for a **$10 AUD buy-in at 0.05/0.10 blinds**. Change the
+currency, standard buy-in and stakes label under **Settings → Your group**;
+amounts are kept to the cent throughout, so small-stakes results stay exact.
+
+The group has exactly one name. When sharing is on it's also what friends type
+to join, so it's fixed for as long as the device is connected.
 
 ---
 
