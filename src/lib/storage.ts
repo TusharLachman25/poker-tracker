@@ -8,6 +8,8 @@ export const defaultSettings = (): Ledger['settings'] => ({
   groupName: 'Home Game',
   defaultBuyIn: 1000, // $10.00
   defaultStakes: '0.05/0.10',
+  // Untouched defaults must lose to any group's real settings on first join.
+  updatedAt: 0,
 });
 
 export const emptyLedger = (): Ledger => ({

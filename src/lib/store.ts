@@ -261,7 +261,11 @@ export const useStore = create<Store>((set, get) => ({
 
   updateSettings(patch) {
     const ledger = get().ledger;
-    commit(set, { ...ledger, settings: { ...ledger.settings, ...patch } });
+    commit(set, {
+      ...ledger,
+      // Stamped so the next sync can tell this is newer than the server's copy.
+      settings: { ...ledger.settings, ...patch, updatedAt: Date.now() },
+    });
   },
 
   replaceLedger(ledger) {

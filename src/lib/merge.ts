@@ -36,8 +36,12 @@ export function mergeLedgers(mine: Ledger, theirs: Ledger): Ledger {
     // Append-only, so this is a union rather than a contest; trimmed to keep
     // the synced document small.
     activity: trimActivity(mergeList<Activity>(mine.activity ?? [], theirs.activity ?? [])),
-    // Settings are a single small record; prefer whichever side named the group.
-    settings: theirs.settings?.groupName ? { ...mine.settings, ...theirs.settings } : mine.settings,
+    // Settings move as one record, so the newer side wins outright. Merging
+    // them field by field would let a stale server copy undo a local change.
+    settings:
+      (theirs.settings?.updatedAt ?? 0) > (mine.settings?.updatedAt ?? 0)
+        ? theirs.settings
+        : mine.settings,
   };
 }
 

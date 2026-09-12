@@ -6,6 +6,7 @@ import { settle } from '../settle';
 import { NOTABLE, describeSession, diffSession, entry } from '../activity';
 import { MIN_PASSWORD, configFor, groupId, validateGroup } from '../sync';
 import type { Ledger, Session } from '../types';
+import { mergeLedgers } from '../merge';
 
 const player = (id: string, name: string) => ({
   id, name, color: '#fff', updatedAt: 1,
@@ -17,7 +18,13 @@ function ledgerOf(sessions: Session[]): Ledger {
     sessions,
     payments: [],
     activity: [],
-    settings: { currency: 'AUD', groupName: 'Test', defaultBuyIn: 1000, defaultStakes: '0.05/0.10' },
+    settings: {
+      currency: 'AUD',
+      groupName: 'Test',
+      defaultBuyIn: 1000,
+      defaultStakes: '0.05/0.10',
+      updatedAt: 0,
+    },
   };
 }
 
@@ -438,5 +445,61 @@ describe('activity log', () => {
     expect(e.actorId).toBe('a');
     expect(e.at).toBeGreaterThan(0);
     expect(e.id).toBeTruthy();
+  });
+});
+
+describe('settings survive a sync', () => {
+  const base = (patch: Partial<Ledger['settings']>, updatedAt: number): Ledger => ({
+    players: [],
+    sessions: [],
+    payments: [],
+    activity: [],
+    settings: {
+      currency: 'USD',
+      groupName: 'Friday Night Crew',
+      defaultBuyIn: 1000,
+      defaultStakes: '0.05/0.10',
+      updatedAt,
+      ...patch,
+    },
+  });
+
+  it('keeps a change made here over the older copy on the server', () => {
+    // The reported bug: switch to AUD, and a sync a few seconds later pulls
+    // the server's stale USD back over it.
+    const mine = base({ currency: 'AUD' }, 2000);
+    const theirs = base({ currency: 'USD' }, 1000);
+    expect(mergeLedgers(mine, theirs).settings.currency).toBe('AUD');
+  });
+
+  it('adopts the group settings when the server is the newer one', () => {
+    const mine = base({ currency: 'USD' }, 1000);
+    const theirs = base({ currency: 'AUD' }, 2000);
+    expect(mergeLedgers(mine, theirs).settings.currency).toBe('AUD');
+  });
+
+  it('adopts the group settings when joining with untouched defaults', () => {
+    // A fresh device has never edited its settings, so updatedAt is 0.
+    const mine = base({ currency: 'AUD' }, 0);
+    const theirs = base({ currency: 'GBP', groupName: 'Other Crew' }, 5);
+    const merged = mergeLedgers(mine, theirs).settings;
+    expect(merged.currency).toBe('GBP');
+    expect(merged.groupName).toBe('Other Crew');
+  });
+
+  it('carries the buy-in and stakes with it, not just the currency', () => {
+    const mine = base({ defaultBuyIn: 2000, defaultStakes: '0.10/0.20' }, 2000);
+    const theirs = base({ defaultBuyIn: 1000, defaultStakes: '0.05/0.10' }, 1000);
+    const merged = mergeLedgers(mine, theirs).settings;
+    expect(merged.defaultBuyIn).toBe(2000);
+    expect(merged.defaultStakes).toBe('0.10/0.20');
+  });
+
+  it('is stable when the same ledger syncs twice', () => {
+    const mine = base({ currency: 'AUD' }, 2000);
+    const theirs = base({ currency: 'USD' }, 1000);
+    const once = mergeLedgers(mine, theirs);
+    const twice = mergeLedgers(once, theirs);
+    expect(twice.settings.currency).toBe('AUD');
   });
 });

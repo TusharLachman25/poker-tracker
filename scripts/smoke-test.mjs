@@ -189,6 +189,46 @@ try {
   );
   check('the payment is listed in the history', historyCount, 1);
 
+  // --- Settings must stick ----------------------------------------------
+  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+
+  const changed = await page.evaluate(() => {
+    for (const select of document.querySelectorAll('select')) {
+      const option = [...select.options].find((o) => o.textContent === 'GBP');
+      if (!option) continue;
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }
+    return false;
+  });
+  check('the currency can be changed', changed, true);
+
+  // Long enough for the sync debounce and a re-render to have fired.
+  await new Promise((r) => setTimeout(r, 4000));
+  const stuck = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('poker-tracker/ledger/v1') ?? '{}');
+    const shown = [...document.querySelectorAll('select')]
+      .map((s) => s.value)
+      .find((v) => /^[A-Z]{3}$/.test(v));
+    return { stored: stored?.settings?.currency, shown };
+  });
+  check('and stays changed a few seconds later', stuck.stored, 'GBP');
+  check('with the dropdown still showing it', stuck.shown, 'GBP');
+
+  // Put it back so later checks read the default currency.
+  await page.evaluate(() => {
+    for (const select of document.querySelectorAll('select')) {
+      const option = [...select.options].find((o) => o.textContent === 'AUD');
+      if (!option) continue;
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+  });
+  await new Promise((r) => setTimeout(r, 300));
+
   // --- Activity log: an edit has to leave a trace -----------------------
   // Say who this phone is, so the edit is attributed rather than anonymous.
   await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle0' });

@@ -123,6 +123,14 @@ export interface Settings {
   defaultBuyIn: number;
   /** Free text shown on new sessions, e.g. "0.05/0.10". */
   defaultStakes: string;
+  /**
+   * When these settings were last changed.
+   *
+   * Settings move as one record, so a sync has to know which side is newer.
+   * Without this the server's copy always won and a local change — switching
+   * currency, say — was silently undone by the next sync.
+   */
+  updatedAt: number;
 }
 
 /** The entire app state, and the exact shape that gets synced. */
