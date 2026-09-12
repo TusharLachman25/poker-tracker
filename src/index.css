@@ -1,0 +1,464 @@
+/* ==========================================================================
+   Poker Tracker — design system
+   Dark felt table, gold accents, money in green/red. Phone-first.
+   ========================================================================== */
+
+:root {
+  --felt-900: #0b1412;
+  --felt-800: #101c19;
+  --felt-700: #162723;
+  --felt-600: #1e342e;
+  --line: #23403a;
+  --line-soft: #1a2f2a;
+
+  --text: #e8f2ee;
+  --text-dim: #8ba69e;
+  --text-faint: #5d7a73;
+
+  --gold: #e3b341;
+  --gold-dim: #9c7a2c;
+  --win: #3ddc84;
+  --loss: #ff6b6b;
+  --info: #5cb8ff;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.5);
+
+  --tab-h: 62px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--felt-900);
+  /* Soft table-felt glow so flat black doesn't read as "unstyled". */
+  background-image:
+    radial-gradient(1100px 620px at 50% -12%, #16302a 0%, transparent 62%),
+    radial-gradient(760px 520px at 90% 108%, #12241f 0%, transparent 64%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.02em; }
+p { margin: 0; }
+
+/* --------------------------------------------------------------------------
+   App shell
+   -------------------------------------------------------------------------- */
+
+.app {
+  min-height: 100%;
+  padding-bottom: calc(var(--tab-h) + var(--safe-bottom) + 12px);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* max() keeps the header clear of the status bar even where the WebView
+     reports no safe-area inset (some Android builds), without double-padding
+     on iOS where the inset is real. */
+  padding: max(calc(var(--safe-top) + 14px), 26px) 16px 12px;
+  background: linear-gradient(to bottom, rgba(11, 20, 18, 0.97) 72%, rgba(11, 20, 18, 0));
+  backdrop-filter: blur(12px);
+}
+
+.topbar h1 { font-size: 21px; flex: 1; min-width: 0; }
+.topbar .sub { font-size: 12px; color: var(--text-dim); font-weight: 500; margin-top: 2px; }
+
+.page { padding: 4px 16px 24px; max-width: 720px; margin: 0 auto; }
+
+@media (min-width: 760px) {
+  .topbar { max-width: 720px; margin: 0 auto; }
+}
+
+/* --------------------------------------------------------------------------
+   Bottom tab bar
+   -------------------------------------------------------------------------- */
+
+.tabs {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 6px 8px calc(6px + var(--safe-bottom));
+  background: rgba(13, 24, 21, 0.94);
+  backdrop-filter: blur(18px);
+  border-top: 1px solid var(--line-soft);
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tab svg { width: 21px; height: 21px; }
+.tab.active { color: var(--gold); background: rgba(227, 179, 65, 0.1); }
+.tab:active { transform: scale(0.95); }
+
+/* --------------------------------------------------------------------------
+   Cards & surfaces
+   -------------------------------------------------------------------------- */
+
+.card {
+  background: linear-gradient(160deg, var(--felt-700), var(--felt-800));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.card-pad { padding: 14px 16px; }
+
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.stack-sm { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.grow { flex: 1; min-width: 0; }
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  margin: 18px 2px 8px;
+}
+
+/* --------------------------------------------------------------------------
+   Money
+   -------------------------------------------------------------------------- */
+
+.money { font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: -0.01em; }
+.win { color: var(--win); }
+.loss { color: var(--loss); }
+.flat { color: var(--text-dim); }
+
+/* --------------------------------------------------------------------------
+   Icons
+   -------------------------------------------------------------------------- */
+
+/* Inline SVG has no intrinsic size. This is the default for every icon;
+   the rules below size them per context. */
+.icon { width: 20px; height: 20px; flex: 0 0 auto; }
+
+.lb-row .icon { color: var(--text-faint); }
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--felt-600);
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) { filter: brightness(1.15); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary {
+  background: linear-gradient(160deg, var(--gold), #c2932f);
+  border-color: var(--gold);
+  color: #23190a;
+  font-weight: 700;
+}
+
+.btn-danger {
+  color: var(--loss);
+  border-color: rgba(255, 107, 107, 0.35);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+/* Inline icons carry no intrinsic size, so without this they render enormous. */
+.btn svg { width: 18px; height: 18px; flex: 0 0 auto; }
+
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn-block { width: 100%; }
+.btn-sm { padding: 7px 11px; font-size: 13px; }
+.btn-icon { padding: 9px; border-radius: 999px; }
+.btn-icon svg { width: 19px; height: 19px; display: block; }
+
+/* --------------------------------------------------------------------------
+   Forms
+   -------------------------------------------------------------------------- */
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label { font-size: 12.5px; font-weight: 600; color: var(--text-dim); }
+
+.input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--felt-900);
+  color: var(--text);
+  font-size: 16px; /* 16px stops iOS Safari zooming the page on focus */
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus { border-color: var(--gold-dim); box-shadow: 0 0 0 3px rgba(227, 179, 65, 0.14); }
+.input::placeholder { color: var(--text-faint); }
+textarea.input { resize: vertical; min-height: 72px; font-family: inherit; }
+select.input { appearance: none; background-image: none; }
+
+.input-money { font-variant-numeric: tabular-nums; font-weight: 650; text-align: right; }
+.input-code { font-family: var(--mono); letter-spacing: 0.12em; text-transform: uppercase; }
+
+.hint { font-size: 12px; color: var(--text-faint); line-height: 1.5; }
+
+/* --------------------------------------------------------------------------
+   Avatar
+   -------------------------------------------------------------------------- */
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 750;
+  color: #0b1412;
+  letter-spacing: -0.02em;
+}
+
+.avatar-lg { width: 52px; height: 52px; font-size: 19px; }
+.avatar-sm { width: 27px; height: 27px; font-size: 11px; }
+
+/* --------------------------------------------------------------------------
+   Leaderboard rows
+   -------------------------------------------------------------------------- */
+
+.lb-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.lb-row:last-child { border-bottom: 0; }
+.lb-row:active { background: rgba(255, 255, 255, 0.03); }
+
+.rank {
+  flex: 0 0 auto;
+  width: 22px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.rank-1 { color: var(--gold); }
+
+.lb-name { font-size: 15px; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-meta { font-size: 11.5px; color: var(--text-faint); margin-top: 2px; }
+.lb-net { font-size: 16px; text-align: right; }
+.lb-sub { font-size: 11px; color: var(--text-faint); margin-top: 2px; text-align: right; }
+
+/* --------------------------------------------------------------------------
+   Stat grid
+   -------------------------------------------------------------------------- */
+
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
+
+.stat {
+  padding: 11px 12px;
+  background: linear-gradient(160deg, var(--felt-700), var(--felt-800));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.stat-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 720;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.stat-value-sm { font-size: 15px; }
+.stat-note { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+
+/* --------------------------------------------------------------------------
+   Pills & badges
+   -------------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--felt-600);
+  border: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.pill-win { background: rgba(61, 220, 132, 0.12); border-color: rgba(61, 220, 132, 0.3); color: var(--win); }
+.pill-loss { background: rgba(255, 107, 107, 0.12); border-color: rgba(255, 107, 107, 0.3); color: var(--loss); }
+.pill-warn { background: rgba(227, 179, 65, 0.12); border-color: rgba(227, 179, 65, 0.32); color: var(--gold); }
+
+/* --------------------------------------------------------------------------
+   Empty state
+   -------------------------------------------------------------------------- */
+
+.empty { text-align: center; padding: 40px 22px; }
+.empty-icon {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 14px;
+  color: var(--gold);
+  opacity: 0.9;
+}
+
+.empty-glyph { width: 46px; height: 46px; display: inline-block; }
+.empty h3 { font-size: 16.5px; margin-bottom: 6px; }
+.empty p { font-size: 13.5px; color: var(--text-dim); line-height: 1.6; max-width: 320px; margin: 0 auto 16px; }
+
+/* --------------------------------------------------------------------------
+   Modal / sheet
+   -------------------------------------------------------------------------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(3px);
+  animation: fade 0.16s ease-out;
+}
+
+@media (min-width: 620px) { .scrim { align-items: center; padding: 20px; } }
+
+.sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 18px 18px calc(18px + var(--safe-bottom));
+  background: var(--felt-800);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  animation: rise 0.22s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@media (min-width: 620px) {
+  .sheet { border-radius: var(--radius-lg); animation: fade 0.16s ease-out; }
+}
+
+.sheet h2 { font-size: 17px; margin-bottom: 14px; }
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* --------------------------------------------------------------------------
+   Misc
+   -------------------------------------------------------------------------- */
+
+.divider { height: 1px; background: var(--line-soft); margin: 4px 0; }
+
+.banner {
+  display: flex;
+  gap: 10px;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid;
+}
+
+.banner-warn { background: rgba(227, 179, 65, 0.09); border-color: rgba(227, 179, 65, 0.28); color: #f0d69a; }
+.banner-error { background: rgba(255, 107, 107, 0.09); border-color: rgba(255, 107, 107, 0.28); color: #ffb3b3; }
+.banner-ok { background: rgba(61, 220, 132, 0.09); border-color: rgba(61, 220, 132, 0.28); color: #a5f0c6; }
+.banner-info { background: rgba(92, 184, 255, 0.09); border-color: rgba(92, 184, 255, 0.26); color: #b3dcff; }
+
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.center { text-align: center; }

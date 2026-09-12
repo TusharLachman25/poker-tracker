@@ -1,0 +1,172 @@
+# Poker Tracker
+
+Track who's up and who's down across your home game. One codebase ships as an
+installable web app (what your iPhone friends use) and as a real Android APK.
+
+Everything works offline and lives on the device. Turn on sharing and the whole
+group reads and writes one ledger.
+
+---
+
+## What it does
+
+**Standings** — everyone ranked by profit, with a cumulative-profit graph,
+win/loss record, ROI, streaks, and filters for the last 30/90 days or this year.
+
+**Sessions** — log a night: who played, what they bought in for, what they
+cashed out. Every player starts at your standard buy-in and **+ buy-in** adds
+another bullet in one tap, so a normal night only needs the cash-outs typed in.
+The editor adds it up live and warns you when cash-outs don't match buy-ins,
+which is almost always a typo rather than a miracle.
+
+**Settle up** — turns everyone's balance into the shortest list of payments
+("Sam pays Dev $370"), for one night or for all time.
+
+**Players** — per-person page with their full history, best and worst nights,
+hourly rate when you record how long you played.
+
+**Your data** — JSON backup, CSV export for spreadsheets, and optional cloud
+sync so the group shares one set of numbers.
+
+Defaults are set for a **$10 buy-in at 0.05/0.10 blinds**. Change the standard
+buy-in and the stakes label under **Settings → Your game**; amounts are kept to
+the cent throughout, so small-stakes results stay exact.
+
+---
+
+## Running it
+
+```bash
+npm install
+npm run dev          # http://localhost:5173
+```
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Development server with hot reload |
+| `npm run build` | Production build into `dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm test` | Unit tests for the money, stats and settle-up logic |
+| `npm run smoke` | End-to-end test through the real UI (needs `npm run preview` running) |
+| `npm run icons` | Regenerate every icon from `public/icons/icon.svg` |
+| `npm run android:apk` | Build, sync, and produce a debug APK |
+| `npm run android:open` | Open the project in Android Studio |
+
+---
+
+## Getting it onto phones
+
+### iPhone — install the web app
+
+iOS doesn't allow sideloading, so iPhones get the app as an installable PWA.
+It behaves like a normal app: own icon, no browser chrome, works offline.
+
+1. Host the contents of `dist/` anywhere static. The build uses relative paths,
+   so a subfolder is fine. Easiest options:
+   - **Netlify** — drag the `dist` folder onto <https://app.netlify.com/drop>
+   - **Vercel** — `npx vercel deploy --prod dist`
+   - **GitHub Pages** — push `dist/` to a `gh-pages` branch
+2. Open the URL in **Safari** (this doesn't work from Chrome on iOS).
+3. Share → **Add to Home Screen**.
+
+It must be served over HTTPS for offline mode to work. All the hosts above do
+that automatically.
+
+Android users can install the same web app from Chrome ("Add to Home screen"),
+or use the APK below.
+
+### Android — install the APK
+
+A ready-to-install debug build is at `build-output/PokerTracker-debug.apk`.
+
+Send it to the phone (or `adb install`), then open it. Android will ask you to
+allow installing from that source the first time.
+
+To rebuild it yourself:
+
+```bash
+npm run android:apk
+# -> android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Requires a JDK (21 works) and the Android SDK. If Gradle can't find the SDK,
+point it at yours in `android/local.properties`:
+
+```properties
+sdk.dir=C:/Users/you/AppData/Local/Android/Sdk
+```
+
+#### A signed release build
+
+Debug APKs are fine for passing round your group. For a Play Store upload you
+need a signed release build — create a keystore once:
+
+```bash
+keytool -genkey -v -keystore poker-tracker.keystore \
+  -alias poker -keyalg RSA -keysize 2048 -validity 10000
+```
+
+then follow the Capacitor signing guide:
+<https://capacitorjs.com/docs/android/deploying-to-google-play>
+
+---
+
+## Sharing between friends
+
+Without setup, each phone keeps its own copy. To put everyone on one ledger,
+connect a free Supabase project — see **[SETUP.md](SETUP.md)** for the
+click-by-click version. Roughly:
+
+1. One person creates a Supabase project and runs `supabase/schema.sql`.
+2. In the app: **Settings → Set up sharing**, paste the project URL and anon
+   key, tap **Start a group**.
+3. Share the **group code** and those two values with everyone else, who tap
+   **Join a group** instead.
+
+Edits merge rather than overwrite, so two people can log different sessions on
+different phones and nobody's work disappears. Sync runs when the app opens,
+regains focus, and shortly after any change.
+
+Free-tier Supabase is far more than a home game will ever need.
+
+---
+
+## How it's built
+
+- **React + TypeScript + Vite**, no UI framework — the styling is a small
+  hand-written design system in `src/index.css`
+- **Zustand** for state, persisted to `localStorage` on every change
+- **Capacitor** wraps the same build as an Android app
+- **vite-plugin-pwa** makes the web build installable and offline-capable
+  (deliberately skipped in the native build, where it would only serve a stale
+  UI after an app update)
+- The profit chart is hand-drawn SVG — no charting library
+
+### Layout
+
+```
+src/
+  lib/
+    types.ts      Domain model. All money is integer cents.
+    money.ts      Parsing and formatting
+    stats.ts      Leaderboard, per-player stats, date filtering
+    settle.ts     Who-pays-whom
+    merge.ts      Last-write-wins merge used by sync
+    store.ts      Zustand store + persistence
+    sync.ts       Supabase client (lazy-loaded)
+    exchange.ts   JSON/CSV export and import
+  components/     Shared UI, icons, the chart
+  screens/        One file per screen
+supabase/
+  schema.sql      Run this in the Supabase SQL editor
+scripts/
+  generate-icons.mjs
+  smoke-test.mjs
+```
+
+### A note on the money
+
+Amounts are stored as **integer cents** everywhere and only converted for
+display. Poker maths is a lot of adding and subtracting, and floating point
+drifts — `0.1 + 0.2` famously isn't `0.3`. Integers don't. `npm test` locks this
+down along with the settle-up algorithm.
