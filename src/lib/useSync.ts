@@ -13,14 +13,22 @@ const POLL_MS = 60_000;
  * on the push and clobber each other.
  */
 let inFlight = false;
+/** A sync asked for while one was running. The running one pushed what the
+ * device held when it started, so an edit made during it still has to go up. */
+let queued = false;
 
 /**
  * One full sync: pull the group, merge it with this device, push the result.
- * Safe to call from anywhere; overlapping calls collapse into the first.
+ * Safe to call from anywhere; a call made while one is running runs once more
+ * straight after it, rather than being dropped.
  */
 export async function syncNow(): Promise<void> {
   const { sync, ledger, setSyncState, markSynced, mergeIn } = useStore.getState();
-  if (!sync || inFlight) return;
+  if (!sync) return;
+  if (inFlight) {
+    queued = true;
+    return;
+  }
 
   inFlight = true;
   setSyncState('syncing');
@@ -32,6 +40,10 @@ export async function syncNow(): Promise<void> {
     setSyncState('error', e instanceof Error ? e.message : 'Sync failed');
   } finally {
     inFlight = false;
+    if (queued) {
+      queued = false;
+      void syncNow();
+    }
   }
 }
 
@@ -42,11 +54,13 @@ export async function syncNow(): Promise<void> {
  */
 export function useSyncEngine(): void {
   const sync = useStore((s) => s.sync);
-  const ledger = useStore((s) => s.ledger);
+  const edits = useStore((s) => s.edits);
   const connectionKey = sync ? `${sync.url}|${sync.ledgerId}` : null;
 
-  // Push shortly after the ledger changes, but not for the initial mount —
-  // the effect below already does a full sync on connect.
+  // Push shortly after an edit made on this device, but not for the initial
+  // mount — the effect below already does a full sync on connect. Keyed on the
+  // edit count rather than the ledger: a sync changes the ledger too, and
+  // reacting to that scheduled the next sync from inside the last one.
   const settled = useRef(false);
   useEffect(() => {
     if (!connectionKey) return;
@@ -56,7 +70,7 @@ export function useSyncEngine(): void {
     }
     const timer = setTimeout(syncNow, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [ledger, connectionKey]);
+  }, [edits, connectionKey]);
 
   // Re-arms only when the connection itself changes, not on every edit.
   useEffect(() => {

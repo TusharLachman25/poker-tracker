@@ -59,6 +59,10 @@ body {
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
+/* Whole cards and rows are links (a session, a player). Without this they
+   pick up the browser's own link blue and underline, as the Sessions list did. */
+a { color: inherit; text-decoration: none; }
+
 h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.02em; }
 p { margin: 0; }
 

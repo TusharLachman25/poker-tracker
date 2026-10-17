@@ -48,6 +48,14 @@ interface Store {
   syncState: SyncState;
   syncMessage: string;
   lastSyncedAt: number | null;
+  /**
+   * Changes made on this device, counted. The sync engine pushes shortly after
+   * one of these — not after every change to the ledger, because a merge from
+   * the group changes it too, and counting that as an edit scheduled the next
+   * sync from inside the last one: a full pull and push every few seconds for
+   * as long as the app was open.
+   */
+  edits: number;
 
   addPlayer: (name: string) => Player;
   renamePlayer: (id: ID, name: string) => void;
@@ -69,10 +77,16 @@ interface Store {
   markSynced: () => void;
 }
 
-/** Single place where state is persisted, so no mutation can forget to save. */
-function commit(set: (partial: Partial<Store>) => void, ledger: Ledger) {
+type SetState = (partial: Partial<Store> | ((state: Store) => Partial<Store>)) => void;
+
+/**
+ * Single place where state is persisted, so no mutation can forget to save.
+ * Everything that comes through here is an edit made on this device, except a
+ * merge from the group, which passes `local: false`.
+ */
+function commit(set: SetState, ledger: Ledger, local = true) {
   saveLedger(ledger);
-  set({ ledger });
+  set(local ? (state) => ({ ledger, edits: state.edits + 1 }) : { ledger });
 }
 
 /**
@@ -82,7 +96,7 @@ function commit(set: (partial: Partial<Store>) => void, ledger: Ledger) {
  * without leaving a trace — which is the whole point of the log.
  */
 function commitLogged(
-  set: (partial: Partial<Store>) => void,
+  set: SetState,
   ledger: Ledger,
   actor: { id?: ID; name: string },
   action: ActivityAction,
@@ -102,6 +116,7 @@ export const useStore = create<Store>((set, get) => ({
   syncState: loadSync() ? 'idle' : 'off',
   syncMessage: '',
   lastSyncedAt: null,
+  edits: 0,
 
   setWhoAmI(playerId) {
     saveWhoAmI(playerId);
@@ -284,7 +299,8 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   mergeIn(incoming) {
-    commit(set, mergeLedgers(get().ledger, incoming));
+    // Not an edit: the sync that brought this in has already pushed it back.
+    commit(set, mergeLedgers(get().ledger, incoming), false);
   },
 
   setSync(config) {
