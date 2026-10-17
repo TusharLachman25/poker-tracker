@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="felt" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#1c3a32" />
+      <stop offset="1" stop-color="#0a1310" />
+    </linearGradient>
+    <linearGradient id="gold" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#f3ce6d" />
+      <stop offset="0.55" stop-color="#e3b341" />
+      <stop offset="1" stop-color="#b2862c" />
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.28" r="0.75">
+      <stop offset="0" stop-color="#2c5c4f" stop-opacity="0.85" />
+      <stop offset="1" stop-color="#2c5c4f" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#felt)" />
+  <rect width="512" height="512" rx="112" fill="url(#glow)" />
+
+  <!-- Chip rim: dashed ring, the universal poker tell -->
+  <circle
+    cx="256" cy="256" r="176"
+    fill="none" stroke="#e3b341" stroke-opacity="0.28"
+    stroke-width="16" stroke-dasharray="46 34" stroke-linecap="round"
+  />
+
+  <!-- Spade -->
+  <path
+    fill="url(#gold)"
+    d="M256 128c-8 0-13 5-18 11-24 29-70 63-88 92-12 19-16 35-16 51 0 37 28 65 63 65 16 0 29-5 39-14-5 26-17 45-33 59-6 5-4 14 4 14h98c8 0 10-9 4-14-16-14-28-33-33-59 10 9 23 14 39 14 35 0 63-28 63-65 0-16-4-32-16-51-18-29-64-63-88-92-5-6-10-11-18-11z"
+  />
+</svg>
