@@ -1,19 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ProfitChart } from '../components/ProfitChart';
+import { SeasonTabs } from '../components/SeasonTabs';
 import { Avatar, EmptyState, Money, StatTile, relativeDate } from '../components/ui';
 import { HandshakeIcon, SpadeIcon } from '../components/icons';
 import { formatHours } from '../lib/money';
-import { RANGE_LABELS, computeStats, filterByRange, groupSummary, type RangeKey } from '../lib/stats';
+import { computeStats, groupSummary } from '../lib/stats';
 import { useStore } from '../lib/store';
-
-const RANGES: RangeKey[] = ['all', 'month', 'quarter', 'year'];
+import { useSeason } from '../lib/useSeason';
 
 export function Leaderboard() {
   const ledger = useStore((s) => s.ledger);
-  const [range, setRange] = useState<RangeKey>('all');
+  const { season, isCurrent, ledger: scoped } = useSeason();
 
-  const scoped = useMemo(() => filterByRange(ledger, range), [ledger, range]);
   const stats = useMemo(() => computeStats(scoped), [scoped]);
   const summary = useMemo(() => groupSummary(scoped), [scoped]);
 
@@ -40,14 +39,22 @@ export function Leaderboard() {
   if (summary.totalSessions === 0) {
     return (
       <div className="page">
-        <RangeTabs range={range} setRange={setRange} />
+        <SeasonTabs />
         <EmptyState
           icon="🃏"
-          title={range === 'all' ? 'No games logged yet' : `Nothing in the last ${RANGE_LABELS[range].toLowerCase()}`}
+          title={
+            !season
+              ? 'No games logged yet'
+              : isCurrent
+                ? 'A fresh season'
+                : `Nothing logged in ${season.name}`
+          }
           body={
-            range === 'all'
+            !season
               ? 'Log a night of poker and everyone’s running totals start here.'
-              : 'Try a wider date range, or log the next session.'
+              : isCurrent
+                ? `${season.name} starts from zero. Log a night and the standings fill in from here — earlier seasons are a tap away above.`
+                : 'Pick another season above, or log the next session.'
           }
           action={
             <Link className="btn btn-primary" to="/sessions/new">
@@ -64,7 +71,7 @@ export function Leaderboard() {
 
   return (
     <div className="page">
-      <RangeTabs range={range} setRange={setRange} />
+      <SeasonTabs />
 
       {summary.unbalanced.length > 0 ? (
         <div className="banner banner-warn" style={{ marginBottom: 12 }}>
@@ -168,18 +175,3 @@ export function Leaderboard() {
   );
 }
 
-function RangeTabs({ range, setRange }: { range: RangeKey; setRange: (r: RangeKey) => void }) {
-  return (
-    <div className="row" style={{ gap: 6, marginBottom: 14, overflowX: 'auto' }}>
-      {RANGES.map((key) => (
-        <button
-          key={key}
-          className={`btn btn-sm ${range === key ? 'btn-primary' : ''}`.trim()}
-          onClick={() => setRange(key)}
-        >
-          {RANGE_LABELS[key]}
-        </button>
-      ))}
-    </div>
-  );
-}

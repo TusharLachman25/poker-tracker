@@ -1,4 +1,4 @@
-import { sharer, type WriteOffPlan } from './ghost';
+import { sharer, type SeasonWriteOff, type WriteOffPlan } from './ghost';
 import { money } from './money';
 import { entryNet, isLive } from './stats';
 import type { Activity, ActivityAction, Payment, Player, Session } from './types';
@@ -97,6 +97,17 @@ export function describeWriteOff(plan: WriteOffPlan, currency: string): string {
   return text;
 }
 
+/**
+ * The detail line for a whole ghosting, a season at a time when the group has
+ * seasons: "Sem 2 2026: $30 written off: Tushar takes $18, Kabir takes $12".
+ */
+export function describeGhosting(parts: SeasonWriteOff[], currency: string): string {
+  if (parts.length === 0) return 'Square, so nothing was written off';
+  return parts
+    .map(({ season, plan }) => `${season ? `${season.name}: ` : ''}${describeWriteOff(plan, currency)}`)
+    .join('; ');
+}
+
 /** The detail line for an unghost: what went back on, e.g. "$30 back on their balance: Tushar $18, Kabir $12". */
 export function describeUnghost(parts: Payment[], players: Player[], currency: string): string {
   if (parts.length === 0) return 'Nothing had been written off';
@@ -137,6 +148,9 @@ export const ACTION_LABELS: Record<ActivityAction, string> = {
   'player.remove': 'removed a player',
   'player.ghost': 'ghosted a player',
   'player.unghost': 'unghosted a player',
+  'season.start': 'started a new season',
+  'season.rename': 'renamed a season',
+  'season.undo': 'took back a new season',
   'ledger.import': 'restored from a backup',
   'ledger.erase': 'erased everything',
 };
@@ -150,6 +164,8 @@ export const NOTABLE: ReadonlySet<ActivityAction> = new Set<ActivityAction>([
   // Both move other people's balances without any money changing hands.
   'player.ghost',
   'player.unghost',
+  // Moves a season's nights and payments back into the one before.
+  'season.undo',
   'ledger.import',
   'ledger.erase',
 ]);

@@ -86,8 +86,29 @@ export interface Payment {
    * the ghosting it belongs to stands.
    */
   writeOff?: { player: ID; at: number };
+  /**
+   * The season whose debts this settles. Debts don't carry over between
+   * seasons, so paying off last season's debt belongs to last season even
+   * when it happens during this one. Unset on payments from before seasons
+   * existed and from older versions of the app; those go by their date.
+   */
+  season?: ID;
   deleted?: boolean;
   updatedAt: number;
+}
+
+/**
+ * A stretch of play — a semester, say — with its own leaderboard and its own
+ * debts. Each session belongs to the season its date falls in.
+ */
+export interface Season {
+  id: ID;
+  name: string;
+  /**
+   * First day, `YYYY-MM-DD`. Empty for the earliest season, which holds
+   * everything played before the next one started.
+   */
+  start: string;
 }
 
 export type ActivityAction =
@@ -101,6 +122,9 @@ export type ActivityAction =
   | 'player.remove'
   | 'player.ghost'
   | 'player.unghost'
+  | 'season.start'
+  | 'season.rename'
+  | 'season.undo'
   | 'ledger.import'
   | 'ledger.erase';
 
@@ -143,6 +167,15 @@ export interface Settings {
   defaultBuyIn: number;
   /** Free text shown on new sessions, e.g. "0.05/0.10". */
   defaultStakes: string;
+  /**
+   * Seasons, in any order (read them through `seasonsOf`). Absent until the
+   * group starts its first new season; until then everything is one season.
+   *
+   * They live inside settings because older versions of the app carry the
+   * settings record through a sync whole, fields they don't know included,
+   * where a new top-level list would be dropped by their merge.
+   */
+  seasons?: Season[];
   /**
    * When these settings were last changed.
    *

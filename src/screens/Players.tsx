@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar, Confirm, EmptyState, Field, Money, Sheet } from '../components/ui';
 import { ChevronIcon, PlusIcon } from '../components/icons';
+import { seasonScopes } from '../lib/seasons';
 import { computeBalances, computeStats } from '../lib/stats';
 import { PALETTE, useStore } from '../lib/store';
 import type { Player } from '../lib/types';
@@ -152,8 +153,16 @@ export function EditPlayerSheet({ player, onClose }: { player: Player; onClose: 
 
   // `player` is a snapshot from when the sheet opened; ghosting changes it.
   const current = ledger.players.find((p) => p.id === player.id) ?? player;
-  const outstanding = useMemo(
-    () => computeBalances(ledger).find((b) => b.player.id === player.id)?.outstanding ?? 0,
+  // Square means square in every season, since debts never move between them.
+  const owing = useMemo(
+    () =>
+      seasonScopes(ledger)
+        .map(({ season, ledger: scoped }) => ({
+          season,
+          outstanding:
+            computeBalances(scoped).find((b) => b.player.id === player.id)?.outstanding ?? 0,
+        }))
+        .find((s) => s.outstanding !== 0) ?? null,
     [ledger, player.id],
   );
 
@@ -239,15 +248,16 @@ export function EditPlayerSheet({ player, onClose }: { player: Player; onClose: 
 
         {/* Removing someone who isn't square drops their balance out of everyone's
             totals with nobody to cover it, so it waits until they are. */}
-        {outstanding === 0 ? (
+        {!owing ? (
           <button className="btn btn-danger btn-block" onClick={() => setConfirming('remove')}>
             Remove from game
           </button>
         ) : (
           <p className="hint">
-            {current.name} still {outstanding < 0 ? 'owes' : 'is owed'}{' '}
-            <Money cents={Math.abs(outstanding)} colored={false} />, so they can&apos;t be removed
-            yet — it would leave that unaccounted for in everyone&apos;s totals. Settle up
+            {current.name} still {owing.outstanding < 0 ? 'owes' : 'is owed'}{' '}
+            <Money cents={Math.abs(owing.outstanding)} colored={false} />
+            {owing.season ? ` in ${owing.season.name}` : ''}, so they can&apos;t be removed yet —
+            it would leave that unaccounted for in everyone&apos;s totals. Settle up
             {current.ghostedAt ? '' : ' or mark them as ghosted'} first.
           </p>
         )}

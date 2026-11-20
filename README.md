@@ -11,7 +11,20 @@ group reads and writes one ledger.
 ## What it does
 
 **Standings** — everyone ranked by profit, with a cumulative-profit graph,
-win/loss record, ROI, streaks, and filters for the last 30/90 days or this year.
+win/loss record, ROI and streaks, for this season, any earlier one, or all time.
+
+**Seasons** — a fresh start at the end of a semester, without deleting
+anything. **Settings → Start a new season** names the season that's ending and
+the new one, and from then on the leaderboard, player stats and payments all
+start again from zero. Every earlier season stays a tap away with its final
+standings, and the sessions list is grouped by season.
+
+Debts don't carry over: each season settles its own. Anything still owed when a
+season ends stays with that season — listed before you start the new one, and
+still there to record if someone pays up late. A payment made on the last day
+of a season counts for that season even though the new one has started.
+Start the new season tomorrow to keep a game played tonight in the old one, and
+a season started by mistake can be taken back from its **Edit** button.
 
 **Sessions** — log a night: who played, what they bought in for, what they
 cashed out. Every player starts at your standard buy-in and **+ buy-in** adds
@@ -74,7 +87,7 @@ npm run dev          # http://localhost:5173
 | `npm run dev` | Development server with hot reload |
 | `npm run build` | Production build into `dist/` |
 | `npm run preview` | Serve the production build locally |
-| `npm test` | Unit tests for the money, stats and settle-up logic |
+| `npm test` | Unit tests for the money, stats, settle-up, ghosting and season logic |
 | `npm run smoke` | End-to-end test through the real UI (needs `npm run preview` running) |
 | `npm run icons` | Regenerate every icon from `public/icons/icon.svg` |
 | `npm run android:apk` | Build, sync, and produce a debug APK |
@@ -191,6 +204,7 @@ src/
     stats.ts      Leaderboard, per-player stats, outstanding balances
     settle.ts     Who-pays-whom
     ghost.ts      Writing off a ghosted player's balance
+    seasons.ts    Which season a session or payment belongs to
     activity.ts   Audit-log entries and session diffing
     merge.ts      Last-write-wins merge used by sync
     store.ts      Zustand store + persistence

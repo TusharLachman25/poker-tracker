@@ -9,6 +9,7 @@ import { useStore } from '../lib/store';
 import { MIN_PASSWORD, configFor, createRemote, pull, validateGroup } from '../lib/sync';
 import { emptyLedger } from '../lib/storage';
 import { syncNow } from '../lib/useSync';
+import { SeasonsSection } from './SeasonsSection';
 
 // Default first, then the rest.
 const CURRENCIES = ['AUD', 'USD', 'GBP', 'EUR', 'NZD', 'CAD', 'INR', 'SGD', 'JPY', 'AED', 'ZAR', 'BRL', 'MXN'];
@@ -83,6 +84,8 @@ export function Settings() {
           row adds another. Set it to 0 to start sessions empty instead.
         </p>
       </div>
+
+      <SeasonsSection />
 
       <IdentitySection />
 

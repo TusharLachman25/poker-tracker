@@ -361,7 +361,8 @@ try {
   // --- Unghosting: they came back --------------------------------------
   await openDee();
   await clickText('Unghost');
-  check('unghosting says what goes back', (await sheetText()).includes('owes it again'), true);
+  const unghostText = await sheetText();
+  check('unghosting says what goes back', unghostText.includes('Dee owes') && unghostText.includes('again'), true);
   await clickText('Unghost', '.sheet');
   await new Promise((r) => setTimeout(r, 400));
   check('their page no longer says ghosted', await page.$$eval('.banner-info', (els) => els.length), 0);
@@ -417,6 +418,120 @@ try {
   check('ghosting is in the activity log', ghostLog.some((l) => l.includes('Ana ghosted a player')), true);
   check('with the split', ghostLog.some((l) => l.includes('Ana takes') && l.includes('Ben takes')), true);
   check('as is unghosting', ghostLog.some((l) => l.includes('Ana unghosted a player')), true);
+
+  // --- Seasons: a fresh start at the end of the semester ----------------
+  // Going in, Cy still owes Ana $7.50 and Ben $2.50 from the night Dee ghosted.
+  const chipLabels = () =>
+    page.$$eval('.page > .row > button.btn-sm', (els) => els.map((b) => b.textContent?.trim() ?? ''));
+  const pageText = () => page.$eval('.page', (el) => el.textContent?.replace(/\s+/g, ' ') ?? '');
+
+  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  await clickText('Start a new season');
+  // React ignores a plain `.value =`, so go through the native setter.
+  const setInput = (selector, index, value) =>
+    page.evaluate(
+      (sel, i, v) => {
+        const el = document.querySelectorAll(sel)[i];
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      },
+      selector,
+      index,
+      value,
+    );
+  const tomorrow = await page.evaluate(() => {
+    const d = new Date(Date.now() + 86_400_000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
+
+  await setInput('.sheet input.input', 0, 'Sem 2 2026');
+  await setInput('.sheet input.input', 1, 'Sem 1 2027');
+  await new Promise((r) => setTimeout(r, 250));
+  const startSheet = await sheetText();
+  check('starting a season warns what is still owed', startSheet.includes('Still owed in Sem 2 2026'), true);
+  check('naming who owes whom', startSheet.includes('Cy owes Ana'), true);
+  // Every night so far was logged today, so starting today would take them along.
+  check('and warns that tonight would move across', startSheet.includes('Start it tomorrow'), true);
+  await setInput('.sheet input[type="date"]', 0, tomorrow);
+  await new Promise((r) => setTimeout(r, 250));
+  check('starting tomorrow keeps them where they are', (await sheetText()).includes('Start it tomorrow'), false);
+  await clickText('Start Sem 1 2027', '.sheet');
+  await new Promise((r) => setTimeout(r, 400));
+
+  await page.goto(`${BASE}/#/`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  check('the leaderboard offers each season', (await chipLabels()).join('|'), 'This season|Sem 2 2026|All time');
+  check('and starts the new one from zero', await page.$$eval('a.lb-row', (els) => els.length), 0);
+  check('saying so', (await pageText()).includes('A fresh season'), true);
+
+  await clickText('Sem 2 2026');
+  const oldStandings = await page.$$eval('a.lb-row .lb-name', (els) => els.map((e) => e.textContent?.trim()));
+  check('last season keeps its final standings', oldStandings.join(','), 'Ana,Ben,Cy');
+
+  await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  check('payments are per season, with no all-time view', (await chipLabels()).join('|'), 'This season|Sem 2 2026');
+  check("last season's debts are still there", (await readTransfers()).length, 2);
+  check('marked as staying with that season', (await pageText()).includes('Debts from Sem 2 2026 stay here'), true);
+
+  // Cy squares up with Ana late, against last season.
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Record this payment'));
+    btn?.click();
+  });
+  await page.waitForSelector('.sheet', { visible: true });
+  await new Promise((r) => setTimeout(r, 300));
+  await clickText('Save payment', '.sheet');
+  await new Promise((r) => setTimeout(r, 450));
+  check('a late payment settles last season', (await readTransfers()).length, 1);
+
+  await clickText('This season');
+  check("and the new season doesn't inherit any of it", (await readTransfers()).length, 0);
+  check('it starts square', (await pageText()).includes("Everyone's square"), true);
+
+  // The first night of the new season, tomorrow: Ana +5, Ben -5, Cy breaks even.
+  await page.goto(`${BASE}/#/sessions/new`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  await setInput('input[type="date"]', 0, tomorrow);
+  const night3 = await page.$$('.card:not(.card-pad) input.input-money');
+  if (night3.length !== 6) throw new Error(`expected 6 money inputs, found ${night3.length}`);
+  await night3[1].type('15'); // Ana
+  await night3[3].type('5');  // Ben
+  await night3[5].type('10'); // Cy
+  await new Promise((r) => setTimeout(r, 250));
+  await clickText('Save session');
+  await new Promise((r) => setTimeout(r, 500));
+
+  await page.goto(`${BASE}/#/`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const newStandings = await page.$$eval('a.lb-row', (rows) =>
+    rows.map((r) => ({
+      name: r.querySelector('.lb-name')?.textContent?.trim(),
+      net: r.querySelector('.lb-net')?.textContent?.trim(),
+    })),
+  );
+  check('the new season counts only its own nights', newStandings.length, 3);
+  check('with Ana on top at +5', newStandings[0]?.name === 'Ana' && amountIs(newStandings[0]?.net, '+5'), true);
+
+  await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const seasonPlan = await readTransfers();
+  check("this season's plan is only this season's debt", seasonPlan.length, 1);
+  check('Ben owes Ana $5', seasonPlan[0]?.includes('Ben') && seasonPlan[0]?.includes('$5'), true);
+
+  await page.goto(`${BASE}/#/sessions`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  const headings = await page.$$eval('.section-label', (els) => els.map((e) => e.textContent?.trim()));
+  check('sessions are grouped by season', headings.join('|'), 'Sem 1 2027 · this season|Sem 2 2026');
+
+  await page.goto(`${BASE}/#/activity`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const seasonLog = await page.$$eval('.card > div', (rows) =>
+    rows.map((r) => r.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+  );
+  check('starting a season is in the activity log', seasonLog.some((l) => l.includes('Ana started a new season')), true);
 
   check('no console errors', errors.length, 0);
   if (errors.length) for (const e of [...new Set(errors)]) console.log('        ', e);

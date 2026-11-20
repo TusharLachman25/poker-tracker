@@ -1,5 +1,6 @@
+import { seasonScopes } from './seasons';
 import { activePayments, computeBalances } from './stats';
-import type { Balance, ID, Ledger, Payment } from './types';
+import type { Balance, ID, Ledger, Payment, Season } from './types';
 
 /**
  * Ghosting: someone stops turning up without settling, so their balance is
@@ -75,6 +76,26 @@ export function planWriteOff(ledger: Ledger, playerId: ID): WriteOffPlan | null 
   return { target, shares, unplaced: Math.abs(owed) - placed };
 }
 
+/** One season's part of a ghosting. */
+export interface SeasonWriteOff {
+  /** Null before the group has seasons. */
+  season: Season | null;
+  plan: WriteOffPlan;
+}
+
+/**
+ * Everything a ghosting writes off, season by season.
+ *
+ * Debts never carry from one season into the next, so each season's balance
+ * is written off within that season, split between the people involved in it.
+ * Seasons where they're square are left out: empty means nothing to write off.
+ */
+export function planGhosting(ledger: Ledger, playerId: ID): SeasonWriteOff[] {
+  return seasonScopes(ledger)
+    .map(({ season, ledger: scoped }) => ({ season, plan: planWriteOff(scoped, playerId) }))
+    .filter((s): s is SeasonWriteOff => s.plan !== null && s.plan.target.outstanding !== 0);
+}
+
 /**
  * Split `total` cents in proportion to `weights`, to the cent.
  *
@@ -107,12 +128,14 @@ export function apportion(total: number, weights: number[]): number[] {
   return parts.map((p) => p.amount);
 }
 
-/** One ghosting's write-off, gathered back up from the payments that carry it. */
+/** One ghosting's write-off in one season, gathered back up from the payments that carry it. */
 export interface WriteOffRecord {
   /** The ghosted player. */
   player: ID;
   /** Matches their `ghostedAt`. */
   at: number;
+  /** The season it was written off in, when the group has seasons. */
+  season?: ID;
   date: string;
   /** Everything written off, in cents. */
   total: number;
@@ -122,17 +145,18 @@ export interface WriteOffRecord {
   parts: Payment[];
 }
 
-/** Group write-off payments back into one record per ghosting, for display and undo. */
+/** Group write-off payments back into one record per ghosting per season, for display and undo. */
 export function writeOffRecords(payments: Payment[]): WriteOffRecord[] {
   const byKey = new Map<string, WriteOffRecord>();
   for (const p of payments) {
     if (!p.writeOff) continue;
-    const key = `${p.writeOff.player}:${p.writeOff.at}`;
+    const key = `${p.writeOff.player}:${p.writeOff.at}:${p.season ?? ''}`;
     let record = byKey.get(key);
     if (!record) {
       record = {
         player: p.writeOff.player,
         at: p.writeOff.at,
+        season: p.season,
         date: p.date,
         total: 0,
         debt: p.from === p.writeOff.player,
@@ -146,10 +170,10 @@ export function writeOffRecords(payments: Payment[]): WriteOffRecord[] {
   return [...byKey.values()];
 }
 
-/** The write-off standing for a player right now, if any. */
-export function standingWriteOff(ledger: Ledger, playerId: ID): WriteOffRecord | null {
+/** The write-offs standing for a player right now, one per season. Empty when there are none. */
+export function standingWriteOffs(ledger: Ledger, playerId: ID): WriteOffRecord[] {
   const mine = activePayments(ledger).filter((p) => p.writeOff?.player === playerId);
-  return writeOffRecords(mine)[0] ?? null;
+  return writeOffRecords(mine);
 }
 
 /** Who a share of a write-off belongs to: whichever side of it isn't the ghost. */

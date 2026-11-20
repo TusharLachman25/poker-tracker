@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProfitChart } from '../components/ProfitChart';
+import { SeasonTabs } from '../components/SeasonTabs';
 import { Avatar, Money, StatTile, formatDate } from '../components/ui';
 import { BackIcon, ChevronIcon, EditIcon } from '../components/icons';
 import { isoDate } from '../lib/dates';
-import { standingWriteOff } from '../lib/ghost';
+import { standingWriteOffs } from '../lib/ghost';
 import { formatHours } from '../lib/money';
 import { computeStats, entryNet, sessionEntry, sortedSessions, activeSessions } from '../lib/stats';
 import { useStore } from '../lib/store';
 import { GAME_LABELS } from '../lib/types';
+import { useSeason } from '../lib/useSeason';
 import { UnghostSheet } from './GhostSheet';
 import { EditPlayerSheet } from './Players';
 
@@ -16,20 +18,26 @@ export function PlayerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const ledger = useStore((s) => s.ledger);
+  // Results follow the season picked anywhere in the app; the ghosting banner
+  // is about the player, so it reads the whole ledger.
+  const { ledger: scoped, label } = useSeason();
   const [editing, setEditing] = useState(false);
   const [unghosting, setUnghosting] = useState(false);
 
-  const stats = useMemo(() => computeStats(ledger), [ledger]);
+  const stats = useMemo(() => computeStats(scoped), [scoped]);
   const me = stats.find((s) => s.player.id === id);
-  const writeOff = useMemo(() => (id ? standingWriteOff(ledger, id) : null), [ledger, id]);
+  const writtenOff = useMemo(
+    () => (id ? standingWriteOffs(ledger, id).reduce((sum, r) => sum + r.total, 0) : 0),
+    [ledger, id],
+  );
   const rank = me ? stats.filter((s) => s.sessions > 0).findIndex((s) => s.player.id === id) + 1 : 0;
 
   const history = useMemo(() => {
     if (!id) return [];
-    return sortedSessions(activeSessions(ledger))
+    return sortedSessions(activeSessions(scoped))
       .filter((s) => sessionEntry(s, id))
       .reverse();
-  }, [ledger, id]);
+  }, [scoped, id]);
 
   if (!me) {
     return (
@@ -79,9 +87,9 @@ export function PlayerDetail() {
                   ? undefined
                   : 'numeric',
             })}
-            {writeOff ? (
+            {writtenOff > 0 ? (
               <>
-                {' '}· <Money cents={writeOff.total} colored={false} /> written off
+                {' '}· <Money cents={writtenOff} colored={false} /> written off
               </>
             ) : null}
           </span>
@@ -91,8 +99,10 @@ export function PlayerDetail() {
         </div>
       ) : null}
 
+      <SeasonTabs />
+
       <div className="card card-pad center" style={{ marginBottom: 12 }}>
-        <div className="stat-label">All-time</div>
+        <div className="stat-label">{label}</div>
         <div style={{ fontSize: 34, fontWeight: 760, letterSpacing: '-0.03em', marginTop: 4 }}>
           <Money cents={me.net} signed />
         </div>

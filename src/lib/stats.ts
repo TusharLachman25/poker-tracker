@@ -216,36 +216,6 @@ export function groupSummary(ledger: Ledger): GroupSummary {
 }
 
 // ---------------------------------------------------------------------------
-// Date range filtering
-// ---------------------------------------------------------------------------
-
-export type RangeKey = 'all' | 'month' | 'quarter' | 'year';
-
-export const RANGE_LABELS: Record<RangeKey, string> = {
-  all: 'All time',
-  month: '30 days',
-  quarter: '90 days',
-  year: 'This year',
-};
-
-function rangeStart(key: RangeKey): string | null {
-  const now = new Date();
-  if (key === 'all') return null;
-  if (key === 'year') return `${now.getFullYear()}-01-01`;
-  const days = key === 'month' ? 30 : 90;
-  const start = new Date(now.getTime() - days * 86_400_000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
-}
-
-/** Narrow a ledger to one time window. Players are kept so the roster stays stable. */
-export function filterByRange(ledger: Ledger, key: RangeKey): Ledger {
-  const start = rangeStart(key);
-  if (!start) return ledger;
-  return { ...ledger, sessions: ledger.sessions.filter((s) => s.date >= start) };
-}
-
-// ---------------------------------------------------------------------------
 // Outstanding balances
 // ---------------------------------------------------------------------------
 

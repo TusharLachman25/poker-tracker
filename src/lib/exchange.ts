@@ -8,6 +8,7 @@ import {
   sortedSessions,
   activeSessions,
 } from './stats';
+import { seasonOfDate, seasonOfPayment, seasonScopes, seasonsOf } from './seasons';
 import { validateLedger } from './storage';
 import { GAME_LABELS, type Ledger, type PlayerStats } from './types';
 
@@ -67,7 +68,14 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
   const amount = (cents: number) => (cents / 100).toFixed(2);
   const lines: string[] = [];
 
-  lines.push(['Date', 'Session', 'Game', 'Location', 'Player', 'Buy-in', 'Cash-out', 'Net'].join(','));
+  // A Season column, once there are seasons to tell apart.
+  const seasons = seasonsOf(ledger);
+  const seasonHeader = seasons.length ? ['Season'] : [];
+  const seasonCell = (season: { name: string } | null) => (seasons.length ? [cell(season?.name ?? '')] : []);
+
+  lines.push(
+    ['Date', ...seasonHeader, 'Session', 'Game', 'Location', 'Player', 'Buy-in', 'Cash-out', 'Net'].join(','),
+  );
 
   for (const session of sortedSessions(activeSessions(ledger))) {
     for (const entry of session.entries) {
@@ -75,6 +83,7 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
       lines.push(
         [
           cell(session.date),
+          ...seasonCell(seasonOfDate(seasons, session.date)),
           cell(session.name ?? ''),
           cell(GAME_LABELS[session.gameType]),
           cell(session.location ?? ''),
@@ -108,11 +117,13 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
   const payments = sortedPayments(activePayments(ledger));
   if (payments.length > 0) {
     lines.push('');
-    lines.push(['Payment date', 'From', 'To', 'Amount', 'Type', 'Note'].join(','));
+    lines.push(['Payment date', ...seasonHeader, 'From', 'To', 'Amount', 'Type', 'Note'].join(','));
     for (const p of payments) {
       lines.push(
         [
           cell(p.date),
+          // The season whose debts it settled, which isn't always its date's.
+          ...seasonCell(seasonOfPayment(seasons, p)),
           cell(names.get(p.from) ?? 'Unknown'),
           cell(names.get(p.to) ?? 'Unknown'),
           amount(p.amount),
@@ -125,15 +136,29 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
   }
 
   // What's left after payments — the number people actually care about.
-  const balances = computeBalances(ledger).filter((b) => b.outstanding !== 0);
+  // Debts never cross seasons, so they're listed a season at a time.
+  const balances = seasonScopes(ledger).flatMap(({ season, ledger: scoped }) =>
+    computeBalances(scoped)
+      .filter((b) => b.outstanding !== 0)
+      .map((b) => ({ season, b })),
+  );
   if (balances.length > 0) {
     lines.push('');
     lines.push(
-      ['Player', 'Net', 'Paid out', 'Received', 'Written off', 'Still owed (+) / still owes (-)'].join(','),
+      [
+        ...seasonHeader,
+        'Player',
+        'Net',
+        'Paid out',
+        'Received',
+        'Written off',
+        'Still owed (+) / still owes (-)',
+      ].join(','),
     );
-    for (const b of balances) {
+    for (const { season, b } of balances) {
       lines.push(
         [
+          ...seasonCell(season),
           cell(b.player.name),
           amount(b.net),
           amount(b.paid),

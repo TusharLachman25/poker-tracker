@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { apportion, planWriteOff, standingWriteOff, writeOffRecords } from '../ghost';
+import { apportion, planWriteOff, standingWriteOffs, writeOffRecords } from '../ghost';
 import { mergeLedgers } from '../merge';
 import { settle } from '../settle';
 import { computeBalances, removedBalances, totalPaid } from '../stats';
@@ -226,7 +226,7 @@ describe('ghosting a player', () => {
     expect(rows.find((r) => r.player.id === 'sam')!.writtenOff).toBe(dollars(30));
     expect(totalPaid(state())).toBe(0);
 
-    const record = standingWriteOff(state(), 'sam')!;
+    const [record] = standingWriteOffs(state(), 'sam');
     expect(record.total).toBe(dollars(30));
     expect(record.debt).toBe(true);
   });

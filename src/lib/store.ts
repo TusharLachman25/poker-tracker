@@ -1,16 +1,25 @@
 import { create } from 'zustand';
 import {
+  describeGhosting,
   describePayment,
   describeSession,
   describeUnghost,
-  describeWriteOff,
   diffSession,
   entry,
 } from './activity';
 import { isoDate } from './dates';
-import { planWriteOff } from './ghost';
+import { planGhosting } from './ghost';
 import { MAX_ACTIVITY, mergeLedgers } from './merge';
-import { activePayments } from './stats';
+import { money } from './money';
+import {
+  addDays,
+  earliestStart,
+  seasonLedger,
+  seasonOfPayment,
+  seasonsOf,
+  type SeasonView,
+} from './seasons';
+import { activePayments, computeBalances } from './stats';
 import {
   emptyLedger,
   loadLedger,
@@ -28,6 +37,7 @@ import type {
   Ledger,
   Payment,
   Player,
+  Season,
   Session,
   Settings,
   SyncConfig,
@@ -66,6 +76,12 @@ interface Store {
    * as long as the app was open.
    */
   edits: number;
+  /**
+   * Which season the screens are showing. Per phone and never saved, so the
+   * app always opens on the season in play.
+   */
+  viewing: SeasonView;
+  setViewing: (view: SeasonView) => void;
 
   addPlayer: (name: string) => Player;
   renamePlayer: (id: ID, name: string) => void;
@@ -83,6 +99,16 @@ interface Store {
   deletePayment: (id: ID) => void;
 
   updateSettings: (patch: Partial<Settings>) => void;
+
+  /**
+   * End the season in play and start a fresh one: a new leaderboard and new
+   * debts from `start` on. The first time, everything so far becomes a season
+   * called `endingName`.
+   */
+  startSeason: (next: { endingName: string; name: string; start: string }) => void;
+  renameSeason: (id: ID, name: string) => void;
+  /** Take back the season in play, as though it had never been started. */
+  undoSeason: (id: ID) => void;
 
   replaceLedger: (ledger: Ledger) => void;
   mergeIn: (incoming: Ledger) => void;
@@ -131,6 +157,11 @@ export const useStore = create<Store>((set, get) => ({
   syncMessage: '',
   lastSyncedAt: null,
   edits: 0,
+  viewing: 'current',
+
+  setViewing(view) {
+    set({ viewing: view });
+  },
 
   setWhoAmI(playerId) {
     saveWhoAmI(playerId);
@@ -209,24 +240,27 @@ export const useStore = create<Store>((set, get) => ({
     const ledger = get().ledger;
     const player = ledger.players.find((p) => p.id === id);
     if (!player || player.ghostedAt) return;
-    const plan = planWriteOff(ledger, id);
-    if (!plan) return;
+    // Each season's balance is written off within that season.
+    const parts = planGhosting(ledger, id);
 
     const at = Date.now();
-    const owes = plan.target.outstanding < 0;
     // Each share goes the way a real payment settling it would have: the
     // ghost "pays" the people taking on their debt, or the people keeping
     // money they owed the ghost "pay" it. That is what makes the balances
     // come out right everywhere, even on a phone running an older version.
-    const writeOffs: Payment[] = plan.shares.map((share) => ({
-      id: newId(),
-      from: owes ? id : share.balance.player.id,
-      to: owes ? share.balance.player.id : id,
-      amount: share.amount,
-      date: isoDate(at),
-      writeOff: { player: id, at },
-      updatedAt: at,
-    }));
+    const writeOffs: Payment[] = parts.flatMap(({ season, plan }) => {
+      const owes = plan.target.outstanding < 0;
+      return plan.shares.map((share) => ({
+        id: newId(),
+        from: owes ? id : share.balance.player.id,
+        to: owes ? share.balance.player.id : id,
+        amount: share.amount,
+        date: isoDate(at),
+        writeOff: { player: id, at },
+        ...(season ? { season: season.id } : {}),
+        updatedAt: at,
+      }));
+    });
 
     commitLogged(
       set,
@@ -248,7 +282,7 @@ export const useStore = create<Store>((set, get) => ({
       get().actor(),
       'player.ghost',
       player.name,
-      describeWriteOff(plan, ledger.settings.currency),
+      describeGhosting(parts, ledger.settings.currency),
     );
   },
 
@@ -370,6 +404,108 @@ export const useStore = create<Store>((set, get) => ({
       // Stamped so the next sync can tell this is newer than the server's copy.
       settings: { ...ledger.settings, ...patch, updatedAt: Date.now() },
     });
+  },
+
+  startSeason({ endingName, name, start }) {
+    const ledger = get().ledger;
+    const seasons = seasonsOf(ledger);
+    const now = Date.now();
+    const earliest = earliestStart(ledger);
+    // Tomorrow at the latest: starting then keeps a game played tonight in
+    // the season that's ending.
+    const latest = addDays(isoDate(now), 1);
+    if (!name.trim() || !start || start > latest || (earliest && start < earliest)) return;
+
+    const current = seasons[seasons.length - 1];
+    // The first time, everything so far becomes a season of its own.
+    const ending: Season = current
+      ? { ...current, name: endingName.trim() || current.name }
+      : { id: newId(), name: endingName.trim() || 'Season 1', start: '' };
+    const before = current ? seasons.map((s) => (s.id === ending.id ? ending : s)) : [ending];
+    const next: Season = { id: newId(), name: name.trim(), start };
+    const known = new Set(before.map((s) => s.id));
+
+    // What the ending season is left with, for the log.
+    const ended = seasonLedger({ ...ledger, settings: { ...ledger.settings, seasons: before } }, ending);
+    const stillOwed = computeBalances(ended).reduce((sum, b) => sum + Math.max(0, b.outstanding), 0);
+
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        // Every payment so far settles debts from before this season — even
+        // one handed over today, the usual end-of-semester squaring up. Pin
+        // each to the season it belongs to now, so the new season's start
+        // date can't pull it across.
+        payments: (ledger.payments ?? []).map((p) =>
+          p.deleted || (p.season && known.has(p.season))
+            ? p
+            : { ...p, season: seasonOfPayment(before, p)?.id, updatedAt: now },
+        ),
+        settings: { ...ledger.settings, seasons: [...before, next], updatedAt: now },
+      },
+      get().actor(),
+      'season.start',
+      next.name,
+      stillOwed > 0
+        ? `${ending.name} ended with ${money(stillOwed, ledger.settings.currency)} still owed`
+        : `${ending.name} ended all square`,
+    );
+    // Anyone looking at an older season lands on the new one.
+    set({ viewing: 'current' });
+  },
+
+  renameSeason(id, name) {
+    const ledger = get().ledger;
+    const seasons = seasonsOf(ledger);
+    const before = seasons.find((s) => s.id === id);
+    const trimmed = name.trim();
+    if (!before || !trimmed || before.name === trimmed) return;
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        settings: {
+          ...ledger.settings,
+          seasons: seasons.map((s) => (s.id === id ? { ...s, name: trimmed } : s)),
+          updatedAt: Date.now(),
+        },
+      },
+      get().actor(),
+      'season.rename',
+      `${before.name} → ${trimmed}`,
+    );
+  },
+
+  undoSeason(id) {
+    const ledger = get().ledger;
+    const seasons = seasonsOf(ledger);
+    const latest = seasons[seasons.length - 1];
+    // Only the season in play can be taken back. The first one holds
+    // everything from before seasons, so it isn't a season to take back.
+    if (!latest || latest.id !== id || seasons.length < 2) return;
+    const rest = seasons.slice(0, -1);
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        settings: {
+          ...ledger.settings,
+          // Down to one season is back to no seasons at all. Payments pinned
+          // to the season taken back fall back to their dates, which now land
+          // them in the one before.
+          seasons: rest.length > 1 ? rest : undefined,
+          updatedAt: Date.now(),
+        },
+      },
+      get().actor(),
+      'season.undo',
+      latest.name,
+      rest.length > 1
+        ? `Its nights and payments are back in ${rest[rest.length - 1].name}`
+        : 'Its nights and payments are back with everything before it',
+    );
+    set({ viewing: 'current' });
   },
 
   replaceLedger(ledger) {

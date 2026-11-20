@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { SeasonTabs } from '../components/SeasonTabs';
 import { Avatar, Confirm, EmptyState, Field, Money, Sheet, formatDate, todayISO } from '../components/ui';
 import { CashIcon, PlusIcon, TrashIcon } from '../components/icons';
 import { sharer, writeOffRecords, type WriteOffRecord } from '../lib/ghost';
@@ -6,7 +7,8 @@ import { parseMoney, toInput } from '../lib/money';
 import { settle } from '../lib/settle';
 import { activePayments, computeBalances, removedBalances, totalPaid } from '../lib/stats';
 import { newId, useStore } from '../lib/store';
-import type { Balance, ID, Payment } from '../lib/types';
+import type { Balance, ID, Payment, Season } from '../lib/types';
+import { useSeason } from '../lib/useSeason';
 import { GhostSheet } from './GhostSheet';
 
 type HistoryItem =
@@ -24,7 +26,7 @@ function historyOf(payments: Payment[]): HistoryItem[] {
       .map((p) => ({ kind: 'payment' as const, key: p.id, date: p.date, at: p.updatedAt, payment: p })),
     ...writeOffRecords(payments).map((r) => ({
       kind: 'writeoff' as const,
-      key: `${r.player}:${r.at}`,
+      key: `${r.player}:${r.at}:${r.season ?? ''}`,
       date: r.date,
       at: r.at,
       record: r,
@@ -41,8 +43,10 @@ interface Draft {
 }
 
 export function Payments() {
-  const ledger = useStore((s) => s.ledger);
   const deletePayment = useStore((s) => s.deletePayment);
+  // Debts belong to a season and never carry over, so everything here is one
+  // season's: its plan, its standing and its history.
+  const { season, isCurrent, ledger } = useSeason({ allTime: false });
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirming, setConfirming] = useState<Payment | null>(null);
@@ -88,11 +92,27 @@ export function Payments() {
 
   return (
     <div className="page">
+      <SeasonTabs allTime={false} />
+
+      {season && !isCurrent ? (
+        <div className="banner banner-info" style={{ marginBottom: 12 }}>
+          <span>🗂️</span>
+          <span>
+            Debts from {season.name} stay here — they don&apos;t carry into the new season. If
+            someone settles one late, record it here.
+          </span>
+        </div>
+      ) : null}
+
       {transfers.length === 0 && history.length === 0 && owing.length === 0 ? (
         <EmptyState
           icon="💸"
           title="Everyone's square"
-          body="Nobody owes anybody. Log a session and any debts will appear here."
+          body={
+            isCurrent
+              ? 'Nobody owes anybody this season. Log a session and any debts will appear here.'
+              : 'Nobody owes anybody. Log a session and any debts will appear here.'
+          }
         />
       ) : null}
 
@@ -291,7 +311,7 @@ export function Payments() {
         </>
       ) : null}
 
-      {draft ? <PaymentSheet draft={draft} onClose={() => setDraft(null)} /> : null}
+      {draft ? <PaymentSheet draft={draft} season={season} onClose={() => setDraft(null)} /> : null}
 
       {writingOff ? <GhostSheet playerId={writingOff} onClose={() => setWritingOff(null)} /> : null}
 
@@ -335,7 +355,16 @@ function BalanceRow({ balance }: { balance: Balance }) {
   );
 }
 
-function PaymentSheet({ draft, onClose }: { draft: Draft; onClose: () => void }) {
+function PaymentSheet({
+  draft,
+  season,
+  onClose,
+}: {
+  draft: Draft;
+  /** The season whose debts this settles, whatever day it's paid on. Null before seasons exist. */
+  season: Season | null;
+  onClose: () => void;
+}) {
   const ledger = useStore((s) => s.ledger);
   const savePayment = useStore((s) => s.savePayment);
 
@@ -432,6 +461,7 @@ function PaymentSheet({ draft, onClose }: { draft: Draft; onClose: () => void })
               amount: cents,
               date,
               note: note.trim() || undefined,
+              ...(season ? { season: season.id } : {}),
               updatedAt: Date.now(),
             });
             onClose();
