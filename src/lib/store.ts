@@ -1,6 +1,16 @@
 import { create } from 'zustand';
-import { describePayment, describeSession, diffSession, entry } from './activity';
+import {
+  describePayment,
+  describeSession,
+  describeUnghost,
+  describeWriteOff,
+  diffSession,
+  entry,
+} from './activity';
+import { isoDate } from './dates';
+import { planWriteOff } from './ghost';
 import { MAX_ACTIVITY, mergeLedgers } from './merge';
+import { activePayments } from './stats';
 import {
   emptyLedger,
   loadLedger,
@@ -61,6 +71,10 @@ interface Store {
   renamePlayer: (id: ID, name: string) => void;
   recolorPlayer: (id: ID, color: string) => void;
   deletePlayer: (id: ID) => void;
+  /** They've stopped turning up: write off their balance and leave them out of new sessions. */
+  ghostPlayer: (id: ID) => void;
+  /** They're back: put the write-off back exactly as it was. */
+  unghostPlayer: (id: ID) => void;
 
   saveSession: (session: Session) => void;
   deleteSession: (id: ID) => void;
@@ -188,6 +202,81 @@ export const useStore = create<Store>((set, get) => ({
       get().actor(),
       'player.remove',
       ledger.players.find((p) => p.id === id)?.name ?? 'a player',
+    );
+  },
+
+  ghostPlayer(id) {
+    const ledger = get().ledger;
+    const player = ledger.players.find((p) => p.id === id);
+    if (!player || player.ghostedAt) return;
+    const plan = planWriteOff(ledger, id);
+    if (!plan) return;
+
+    const at = Date.now();
+    const owes = plan.target.outstanding < 0;
+    // Each share goes the way a real payment settling it would have: the
+    // ghost "pays" the people taking on their debt, or the people keeping
+    // money they owed the ghost "pay" it. That is what makes the balances
+    // come out right everywhere, even on a phone running an older version.
+    const writeOffs: Payment[] = plan.shares.map((share) => ({
+      id: newId(),
+      from: owes ? id : share.balance.player.id,
+      to: owes ? share.balance.player.id : id,
+      amount: share.amount,
+      date: isoDate(at),
+      writeOff: { player: id, at },
+      updatedAt: at,
+    }));
+
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        players: ledger.players.map((p) =>
+          p.id === id ? { ...p, ghostedAt: at, updatedAt: at } : p,
+        ),
+        payments: [
+          // A write-off from an earlier ghosting that didn't stick — say two
+          // phones ghosted them before syncing — is retired here, so no
+          // version of the app goes on counting it.
+          ...(ledger.payments ?? []).map((p) =>
+            p.writeOff?.player === id && !p.deleted ? { ...p, deleted: true, updatedAt: at } : p,
+          ),
+          ...writeOffs,
+        ],
+      },
+      get().actor(),
+      'player.ghost',
+      player.name,
+      describeWriteOff(plan, ledger.settings.currency),
+    );
+  },
+
+  unghostPlayer(id) {
+    const ledger = get().ledger;
+    const player = ledger.players.find((p) => p.id === id);
+    if (!player?.ghostedAt) return;
+
+    const now = Date.now();
+    const restored = activePayments(ledger).filter((p) => p.writeOff?.player === id);
+
+    commitLogged(
+      set,
+      {
+        ...ledger,
+        players: ledger.players.map((p) =>
+          p.id === id ? { ...p, ghostedAt: undefined, updatedAt: now } : p,
+        ),
+        // Tombstoned rather than dropped, so the undo reaches every phone —
+        // including ones that count write-offs as ordinary payments.
+        payments: (ledger.payments ?? []).map((p) =>
+          p.writeOff?.player === id && !p.deleted ? { ...p, deleted: true, updatedAt: now } : p,
+        ),
+      },
+      get().actor(),
+      'player.unghost',
+      player.name,
+      describeUnghost(restored, ledger.players, ledger.settings.currency),
     );
   },
 

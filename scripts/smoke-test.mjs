@@ -284,6 +284,140 @@ try {
   check('the original session log is still there', log.some((l) => l.includes('logged a session')), true);
   check('as is the payment', log.some((l) => l.includes('recorded a payment')), true);
 
+  // --- Ghosting: someone stops turning up without paying ----------------
+  // Everyone is square at this point. Dee joins for one night and loses $10:
+  // Ana +15, Ben +5, Cy -10, Dee -10.
+  await page.goto(`${BASE}/#/players`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 350));
+  await clickText('Add a player');
+  await page.waitForSelector('.sheet input.input', { visible: true });
+  await page.type('.sheet input.input', 'Dee');
+  await clickText('Add', '.sheet');
+  await clickText('Done', '.sheet');
+  await new Promise((r) => setTimeout(r, 350));
+
+  await page.goto(`${BASE}/#/sessions/new`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  const night2 = await page.$$('.card:not(.card-pad) input.input-money');
+  if (night2.length !== 8) throw new Error(`expected 8 money inputs, found ${night2.length}`);
+  await night2[1].type('25'); // Ana
+  await night2[3].type('15'); // Ben
+  await night2[5].type('0');  // Cy
+  await night2[7].type('0');  // Dee
+  await new Promise((r) => setTimeout(r, 250));
+  await clickText('Save session');
+  await new Promise((r) => setTimeout(r, 500));
+
+  await page.goto(`${BASE}/#/players`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 350));
+  const deeHref = await page.$$eval('a.lb-row', (rows) =>
+    rows.find((r) => r.textContent?.includes('Dee'))?.getAttribute('href'),
+  );
+  const deeId = deeHref?.split('/').pop();
+  const openDee = async () => {
+    await page.goto(`${BASE}/${deeHref}`, { waitUntil: 'networkidle0' });
+    await new Promise((r) => setTimeout(r, 400));
+  };
+  const sheetText = () =>
+    page.$eval('.sheet', (el) => el.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+
+  await openDee();
+  await page.click('button[aria-label="Edit player"]');
+  await new Promise((r) => setTimeout(r, 300));
+  check('a player who owes money cannot be removed yet', (await sheetText()).includes("can't be removed yet"), true);
+  await clickText('Mark as ghosted', '.sheet');
+
+  const preview = await sheetText();
+  check('ghosting previews the split before changing anything', preview.includes('Dee owes'), true);
+  check('the biggest winner takes the bigger share', preview.includes('Ana') && preview.includes('$7.50'), true);
+  check('and the smaller winner the rest', preview.includes('Ben') && preview.includes('$2.50'), true);
+  await clickText('Mark as ghosted', '.sheet');
+  await new Promise((r) => setTimeout(r, 400));
+
+  const ghostBanner = await page.$eval('.banner-info', (el) => el.textContent ?? '').catch(() => '');
+  check('their page says they are ghosted', ghostBanner.includes('Ghosted'), true);
+  check('with what was written off', amountIs(ghostBanner.match(/·\s*(\S+)\s*written off/)?.[1], '10'), true);
+
+  await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const afterGhost = await readTransfers();
+  check('the others can settle without them', afterGhost.length, 2);
+  check("Cy pays Ana's share", afterGhost.some((t) => t.includes('Cy') && t.includes('Ana') && t.includes('$7.50')), true);
+  check("and Ben's", afterGhost.some((t) => t.includes('Cy') && t.includes('Ben') && t.includes('$2.50')), true);
+  check('with no "books are out" warning', await page.$$eval('.banner-warn', (els) => els.length), 0);
+  const historyLines = () =>
+    page.$$eval('.card > div', (rows) => rows.filter((r) => r.textContent?.includes('debt written off')).length);
+  check('the write-off shows in the history as one line', await historyLines(), 1);
+
+  await page.goto(`${BASE}/#/sessions/new`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  const deeToggle = await page.$eval('button[aria-label="Add Dee"]', (el) => el.getAttribute('aria-pressed')).catch(() => null);
+  check('a ghosted player starts switched off in a new session', deeToggle, 'false');
+  const lastRow = await page.$$eval('.card:not(.card-pad) > div', (rows) =>
+    rows.filter((r) => r.querySelector('input.input-money')).pop()?.textContent ?? '',
+  );
+  check('and sits at the bottom of the list', lastRow.includes('Dee'), true);
+
+  // --- Unghosting: they came back --------------------------------------
+  await openDee();
+  await clickText('Unghost');
+  check('unghosting says what goes back', (await sheetText()).includes('owes it again'), true);
+  await clickText('Unghost', '.sheet');
+  await new Promise((r) => setTimeout(r, 400));
+  check('their page no longer says ghosted', await page.$$eval('.banner-info', (els) => els.length), 0);
+
+  await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const afterUnghost = await readTransfers();
+  check('their debt is back in the plan', afterUnghost.some((t) => t.includes('Dee')), true);
+  check('and the history no longer shows a write-off', await historyLines(), 0);
+
+  // --- Removing a ghosted player keeps old sessions whole --------------
+  await openDee();
+  await page.click('button[aria-label="Edit player"]');
+  await new Promise((r) => setTimeout(r, 300));
+  await clickText('Mark as ghosted', '.sheet');
+  await clickText('Mark as ghosted', '.sheet');
+  await new Promise((r) => setTimeout(r, 400));
+  await page.click('button[aria-label="Edit player"]');
+  await new Promise((r) => setTimeout(r, 300));
+  await clickText('Remove from game', '.sheet');
+  await clickText('Remove', '.sheet');
+  await new Promise((r) => setTimeout(r, 400));
+
+  await page.goto(`${BASE}/#/payments`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  check('removing them once square leaves the books balanced', await page.$$eval('.banner-warn', (els) => els.length), 0);
+  check('and the plan unchanged', (await readTransfers()).length, 2);
+
+  await page.goto(`${BASE}/#/sessions`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 400));
+  const night2Href = await page.$eval('a.card', (a) => a.getAttribute('href'));
+  await page.goto(`${BASE}/${night2Href}`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const editorText = await page.$eval('.card:not(.card-pad)', (el) => el.textContent ?? '');
+  check('an old session still shows the removed player', /Dee\s*·\s*removed/.test(editorText), true);
+  const stillBalances = await page.$$eval('.banner-ok', (els) => els.some((e) => e.textContent?.includes('balances')));
+  check('and still balances', stillBalances, true);
+
+  await clickText('Save changes');
+  await new Promise((r) => setTimeout(r, 600));
+  const kept = await page.evaluate((id) => {
+    const stored = JSON.parse(localStorage.getItem('poker-tracker/ledger/v1') ?? '{}');
+    return stored.sessions?.some((s) => !s.deleted && s.entries?.some((e) => e.playerId === id));
+  }, deeId);
+  check('saving it keeps their result instead of deleting it', kept, true);
+  check('so no session shows as off', await page.$$eval('.pill-warn', (els) => els.length), 0);
+
+  await page.goto(`${BASE}/#/activity`, { waitUntil: 'networkidle0' });
+  await new Promise((r) => setTimeout(r, 450));
+  const ghostLog = await page.$$eval('.card > div', (rows) =>
+    rows.map((r) => r.textContent?.replace(/\s+/g, ' ').trim() ?? ''),
+  );
+  check('ghosting is in the activity log', ghostLog.some((l) => l.includes('Ana ghosted a player')), true);
+  check('with the split', ghostLog.some((l) => l.includes('Ana takes') && l.includes('Ben takes')), true);
+  check('as is unghosting', ghostLog.some((l) => l.includes('Ana unghosted a player')), true);
+
   check('no console errors', errors.length, 0);
   if (errors.length) for (const e of [...new Set(errors)]) console.log('        ', e);
 } catch (e) {

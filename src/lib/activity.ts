@@ -1,3 +1,4 @@
+import { sharer, type WriteOffPlan } from './ghost';
 import { money } from './money';
 import { entryNet, isLive } from './stats';
 import type { Activity, ActivityAction, Payment, Player, Session } from './types';
@@ -73,6 +74,38 @@ export function describePayment(
   return `${name(payment.from)} → ${name(payment.to)} · ${money(payment.amount, currency)}`;
 }
 
+/**
+ * The detail line for a ghosting: what was written off and who took it on,
+ * e.g. "$30 written off: Tushar takes $18, Kabir takes $12".
+ */
+export function describeWriteOff(plan: WriteOffPlan, currency: string): string {
+  const placed = plan.shares.reduce((sum, s) => sum + s.amount, 0);
+  if (placed === 0 && plan.unplaced === 0) return 'Square, so nothing was written off';
+
+  // Their debt is taken on by the people they owed; money they were owed is
+  // kept by the people who owed it.
+  const verb = plan.target.outstanding < 0 ? 'takes' : 'keeps';
+  const parts = plan.shares.map((s) => `${s.balance.player.name} ${verb} ${money(s.amount, currency)}`);
+
+  let text =
+    placed > 0
+      ? `${money(placed, currency)} written off: ${parts.join(', ')}`
+      : 'Nothing could be written off';
+  if (plan.unplaced > 0) {
+    text += `. ${money(plan.unplaced, currency)} couldn't be placed and stays on their balance`;
+  }
+  return text;
+}
+
+/** The detail line for an unghost: what went back on, e.g. "$30 back on their balance: Tushar $18, Kabir $12". */
+export function describeUnghost(parts: Payment[], players: Player[], currency: string): string {
+  if (parts.length === 0) return 'Nothing had been written off';
+  const name = (id: string) => players.find((p) => p.id === id)?.name ?? 'Someone';
+  const total = parts.reduce((sum, p) => sum + p.amount, 0);
+  const who = parts.map((p) => `${name(sharer(p))} ${money(p.amount, currency)}`);
+  return `${money(total, currency)} back on their balance: ${who.join(', ')}`;
+}
+
 /** Build a log entry. `at` and `id` are filled in here so callers can't forget. */
 export function entry(
   actor: { id?: string; name: string },
@@ -102,6 +135,8 @@ export const ACTION_LABELS: Record<ActivityAction, string> = {
   'player.add': 'added a player',
   'player.rename': 'renamed a player',
   'player.remove': 'removed a player',
+  'player.ghost': 'ghosted a player',
+  'player.unghost': 'unghosted a player',
   'ledger.import': 'restored from a backup',
   'ledger.erase': 'erased everything',
 };
@@ -112,6 +147,9 @@ export const NOTABLE: ReadonlySet<ActivityAction> = new Set<ActivityAction>([
   'session.delete',
   'payment.delete',
   'player.remove',
+  // Both move other people's balances without any money changing hands.
+  'player.ghost',
+  'player.unghost',
   'ledger.import',
   'ledger.erase',
 ]);

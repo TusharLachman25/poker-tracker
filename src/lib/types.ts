@@ -24,6 +24,11 @@ export interface Player {
   name: string;
   /** Hex colour used for charts and avatars. */
   color: string;
+  /**
+   * When they were marked as ghosted: they stopped turning up, and whatever
+   * they owed or were owed was written off. Unset while they're playing.
+   */
+  ghostedAt?: number;
   /** Soft-delete tombstone so deletions survive a sync merge. */
   deleted?: boolean;
   updatedAt: number;
@@ -68,6 +73,19 @@ export interface Payment {
   /** ISO date, `YYYY-MM-DD`. */
   date: string;
   note?: string;
+  /**
+   * Set when no money changed hands: this is one person's share of a ghosted
+   * player's balance being written off.
+   *
+   * It is stored as a payment, in the direction settling it would have gone,
+   * so every version of the app gets the balances right — including ones from
+   * before ghosting existed, which simply show it as an ordinary payment. A
+   * new kind of record would be dropped by those versions on every sync.
+   *
+   * `at` matches the player's `ghostedAt`, so a write-off only counts while
+   * the ghosting it belongs to stands.
+   */
+  writeOff?: { player: ID; at: number };
   deleted?: boolean;
   updatedAt: number;
 }
@@ -81,6 +99,8 @@ export type ActivityAction =
   | 'player.add'
   | 'player.rename'
   | 'player.remove'
+  | 'player.ghost'
+  | 'player.unghost'
   | 'ledger.import'
   | 'ledger.erase';
 
@@ -191,6 +211,11 @@ export interface Balance {
   paid: number;
   /** Total this player has been given. */
   received: number;
+  /**
+   * How far write-offs moved this balance. Positive: some of what they owed
+   * was written off. Negative: some of what they were owed was.
+   */
+  writtenOff: number;
   /** Positive: still owed this much. Negative: still owes it. */
   outstanding: number;
 }

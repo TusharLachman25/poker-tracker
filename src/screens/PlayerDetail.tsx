@@ -3,10 +3,13 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProfitChart } from '../components/ProfitChart';
 import { Avatar, Money, StatTile, formatDate } from '../components/ui';
 import { BackIcon, ChevronIcon, EditIcon } from '../components/icons';
+import { isoDate } from '../lib/dates';
+import { standingWriteOff } from '../lib/ghost';
 import { formatHours } from '../lib/money';
 import { computeStats, entryNet, sessionEntry, sortedSessions, activeSessions } from '../lib/stats';
 import { useStore } from '../lib/store';
 import { GAME_LABELS } from '../lib/types';
+import { UnghostSheet } from './GhostSheet';
 import { EditPlayerSheet } from './Players';
 
 export function PlayerDetail() {
@@ -14,9 +17,11 @@ export function PlayerDetail() {
   const navigate = useNavigate();
   const ledger = useStore((s) => s.ledger);
   const [editing, setEditing] = useState(false);
+  const [unghosting, setUnghosting] = useState(false);
 
   const stats = useMemo(() => computeStats(ledger), [ledger]);
   const me = stats.find((s) => s.player.id === id);
+  const writeOff = useMemo(() => (id ? standingWriteOff(ledger, id) : null), [ledger, id]);
   const rank = me ? stats.filter((s) => s.sessions > 0).findIndex((s) => s.player.id === id) + 1 : 0;
 
   const history = useMemo(() => {
@@ -60,6 +65,31 @@ export function PlayerDetail() {
           <EditIcon />
         </button>
       </div>
+
+      {me.player.ghostedAt ? (
+        <div className="banner banner-info" style={{ marginBottom: 12, alignItems: 'center' }}>
+          <span>👻</span>
+          <span className="grow">
+            Ghosted{' '}
+            {formatDate(isoDate(me.player.ghostedAt), {
+              weekday: undefined,
+              // The year only matters once it isn't this one.
+              year:
+                new Date(me.player.ghostedAt).getFullYear() === new Date().getFullYear()
+                  ? undefined
+                  : 'numeric',
+            })}
+            {writeOff ? (
+              <>
+                {' '}· <Money cents={writeOff.total} colored={false} /> written off
+              </>
+            ) : null}
+          </span>
+          <button className="btn btn-sm" onClick={() => setUnghosting(true)}>
+            Unghost
+          </button>
+        </div>
+      ) : null}
 
       <div className="card card-pad center" style={{ marginBottom: 12 }}>
         <div className="stat-label">All-time</div>
@@ -152,6 +182,10 @@ export function PlayerDetail() {
       ) : null}
 
       {editing ? <EditPlayerSheet player={me.player} onClose={() => setEditing(false)} /> : null}
+
+      {unghosting ? (
+        <UnghostSheet playerId={me.player.id} onClose={() => setUnghosting(false)} />
+      ) : null}
     </div>
   );
 }

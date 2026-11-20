@@ -1,11 +1,37 @@
 import { useMemo, useState } from 'react';
 import { Avatar, Confirm, EmptyState, Field, Money, Sheet, formatDate, todayISO } from '../components/ui';
 import { CashIcon, PlusIcon, TrashIcon } from '../components/icons';
+import { sharer, writeOffRecords, type WriteOffRecord } from '../lib/ghost';
 import { parseMoney, toInput } from '../lib/money';
 import { settle } from '../lib/settle';
-import { activePayments, computeBalances, sortedPayments, totalPaid } from '../lib/stats';
+import { activePayments, computeBalances, removedBalances, totalPaid } from '../lib/stats';
 import { newId, useStore } from '../lib/store';
 import type { Balance, ID, Payment } from '../lib/types';
+import { GhostSheet } from './GhostSheet';
+
+type HistoryItem =
+  | { kind: 'payment'; key: string; date: string; at: number; payment: Payment }
+  | { kind: 'writeoff'; key: string; date: string; at: number; record: WriteOffRecord };
+
+/**
+ * Payments and write-offs in one list, newest first. A write-off is one line
+ * however many people shared it — it was one decision, not several payments.
+ */
+function historyOf(payments: Payment[]): HistoryItem[] {
+  const items: HistoryItem[] = [
+    ...payments
+      .filter((p) => !p.writeOff)
+      .map((p) => ({ kind: 'payment' as const, key: p.id, date: p.date, at: p.updatedAt, payment: p })),
+    ...writeOffRecords(payments).map((r) => ({
+      kind: 'writeoff' as const,
+      key: `${r.player}:${r.at}`,
+      date: r.date,
+      at: r.at,
+      record: r,
+    })),
+  ];
+  return items.sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
+}
 
 /** What the "Pay" button on a suggested transfer pre-fills. */
 interface Draft {
@@ -20,10 +46,12 @@ export function Payments() {
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [confirming, setConfirming] = useState<Payment | null>(null);
+  const [writingOff, setWritingOff] = useState<ID | null>(null);
 
   const balances = useMemo(() => computeBalances(ledger), [ledger]);
-  const history = useMemo(() => sortedPayments(activePayments(ledger)), [ledger]);
+  const history = useMemo(() => historyOf(activePayments(ledger)), [ledger]);
   const byId = useMemo(() => new Map(ledger.players.map((p) => [p.id, p])), [ledger.players]);
+  const removed = useMemo(() => removedBalances(ledger), [ledger]);
 
   // The plan is built from outstanding amounts, not raw winnings, so anything
   // already handed over has been taken off.
@@ -32,8 +60,19 @@ export function Payments() {
     [balances],
   );
 
+  // Someone removed while still owing (or owed) money accounts for that much
+  // of any shortfall. Only what's left after them is a session that doesn't
+  // add up.
+  const fromRemoved = removed.reduce((sum, b) => sum - b.outstanding, 0);
+  const typo = leftover - fromRemoved;
+
   const owing = balances.filter((b) => b.outstanding !== 0);
   const hasPlayers = balances.length > 0;
+  const paymentCount = history.filter((item) => item.kind === 'payment').length;
+  const writtenOff = history.reduce(
+    (sum, item) => sum + (item.kind === 'writeoff' ? item.record.total : 0),
+    0,
+  );
 
   if (!hasPlayers) {
     return (
@@ -104,11 +143,37 @@ export function Payments() {
         </>
       ) : null}
 
-      {leftover !== 0 ? (
+      {leftover !== 0
+        ? removed.map((b) => (
+            <div key={b.player.id} className="banner banner-warn" style={{ marginTop: 12 }}>
+              <span>⚠️</span>
+              <span className="grow">
+                {b.player.name} was removed while still {b.outstanding < 0 ? 'owing' : 'owed'}{' '}
+                <Money cents={Math.abs(b.outstanding)} colored={false} />, so nobody&apos;s been
+                asked to {b.outstanding < 0 ? 'cover it' : 'pay it'}.
+                {!b.player.ghostedAt ? (
+                  <>
+                    {' '}
+                    Write it off to share it out, the same way as ghosting.
+                    <button
+                      className="btn btn-sm btn-block"
+                      style={{ marginTop: 8 }}
+                      onClick={() => setWritingOff(b.player.id)}
+                    >
+                      Write it off
+                    </button>
+                  </>
+                ) : null}
+              </span>
+            </div>
+          ))
+        : null}
+
+      {typo !== 0 ? (
         <div className="banner banner-warn" style={{ marginTop: 12 }}>
           <span>⚠️</span>
           <span>
-            The books are out by <Money cents={Math.abs(leftover)} colored={false} />, so a
+            The books are out by <Money cents={Math.abs(typo)} colored={false} />, so a
             session&apos;s cash-outs don&apos;t match its buy-ins. Fix that session and this will
             square up.
           </span>
@@ -139,19 +204,53 @@ export function Payments() {
         <>
           <div className="section-label">Payment history</div>
           <div className="card">
-            {history.map((payment, i) => {
+            {history.map((item, i) => {
+              const style = {
+                padding: '11px 14px',
+                gap: 9,
+                borderBottom: i < history.length - 1 ? '1px solid var(--line-soft)' : undefined,
+              };
+
+              if (item.kind === 'writeoff') {
+                const { record } = item;
+                const ghost = byId.get(record.player);
+                return (
+                  <div key={item.key} className="row" style={style}>
+                    <div className="grow" style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }} className="truncate">
+                        👻 {ghost?.name ?? 'Someone'}&apos;s {record.debt ? 'debt' : 'winnings'}{' '}
+                        written off
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 2 }}>
+                        {record.date ? formatDate(record.date, { weekday: undefined }) : 'No date'}
+                        {record.parts.map((part) => (
+                          <span key={part.id}>
+                            {' · '}
+                            {byId.get(sharer(part))?.name ?? 'Someone'}{' '}
+                            <Money cents={part.amount} colored={false} />
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <Money cents={record.total} colored={false} />
+                    {/* Not deletable piecemeal — unghosting undoes the whole thing.
+                        The invisible icon keeps the amounts lined up. */}
+                    <span
+                      className="btn btn-ghost btn-icon"
+                      style={{ visibility: 'hidden' }}
+                      aria-hidden="true"
+                    >
+                      <TrashIcon />
+                    </span>
+                  </div>
+                );
+              }
+
+              const { payment } = item;
               const from = byId.get(payment.from);
               const to = byId.get(payment.to);
               return (
-                <div
-                  key={payment.id}
-                  className="row"
-                  style={{
-                    padding: '11px 14px',
-                    gap: 9,
-                    borderBottom: i < history.length - 1 ? '1px solid var(--line-soft)' : undefined,
-                  }}
-                >
+                <div key={item.key} className="row" style={style}>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600 }} className="truncate">
                       {from?.name ?? 'Someone'} → {to?.name ?? 'someone'}
@@ -175,13 +274,26 @@ export function Payments() {
             })}
           </div>
           <p className="hint" style={{ margin: '8px 2px 0' }}>
-            <Money cents={totalPaid(ledger)} colored={false} /> settled across {history.length}{' '}
-            payment{history.length === 1 ? '' : 's'}.
+            {paymentCount > 0 ? (
+              <>
+                <Money cents={totalPaid(ledger)} colored={false} /> settled across {paymentCount}{' '}
+                payment{paymentCount === 1 ? '' : 's'}
+              </>
+            ) : null}
+            {paymentCount > 0 && writtenOff > 0 ? ' · ' : ''}
+            {writtenOff > 0 ? (
+              <>
+                <Money cents={writtenOff} colored={false} /> written off
+              </>
+            ) : null}
+            .
           </p>
         </>
       ) : null}
 
       {draft ? <PaymentSheet draft={draft} onClose={() => setDraft(null)} /> : null}
+
+      {writingOff ? <GhostSheet playerId={writingOff} onClose={() => setWritingOff(null)} /> : null}
 
       {confirming ? (
         <Confirm
@@ -196,7 +308,7 @@ export function Payments() {
 }
 
 function BalanceRow({ balance }: { balance: Balance }) {
-  const { player, outstanding, paid, received } = balance;
+  const { player, outstanding, paid, received, writtenOff } = balance;
 
   return (
     <div className="row" style={{ padding: '11px 14px', gap: 10 }}>
@@ -209,6 +321,9 @@ function BalanceRow({ balance }: { balance: Balance }) {
           {outstanding > 0 ? 'still owed' : 'still owes'}
           {paid > 0 ? <> · paid <Money cents={paid} colored={false} /> so far</> : null}
           {received > 0 ? <> · got <Money cents={received} colored={false} /> so far</> : null}
+          {writtenOff !== 0 ? (
+            <> · <Money cents={Math.abs(writtenOff)} colored={false} /> written off</>
+          ) : null}
         </div>
       </div>
       <Money

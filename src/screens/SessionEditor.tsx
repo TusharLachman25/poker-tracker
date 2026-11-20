@@ -3,9 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Avatar, Confirm, Field, Money, todayISO } from '../components/ui';
 import { BackIcon, HandshakeIcon, TrashIcon } from '../components/icons';
 import { parseMoney, toInput } from '../lib/money';
-import { activePlayers } from '../lib/stats';
+import { activePlayers, isLive } from '../lib/stats';
 import { newId, useStore } from '../lib/store';
-import { GAME_LABELS, type Entry, type GameType, type Session } from '../lib/types';
+import { GAME_LABELS, type Entry, type GameType, type Player, type Session } from '../lib/types';
 import { SettleSheet } from './SettleSheet';
 
 /** Per-row state is kept as raw strings so typing "1", "12", "12." never fights the parser. */
@@ -29,7 +29,11 @@ export function SessionEditor() {
     [ledger.sessions, id, isNew],
   );
 
-  const players = useMemo(() => activePlayers(ledger), [ledger]);
+  const players = useMemo(() => {
+    const everyone = activePlayers(ledger);
+    // Ghosted players sink to the bottom: they're rarely at the table any more.
+    return [...everyone.filter((p) => !p.ghostedAt), ...everyone.filter((p) => p.ghostedAt)];
+  }, [ledger]);
 
   const [date, setDate] = useState(existing?.date ?? todayISO());
   const [name, setName] = useState(existing?.name ?? '');
@@ -47,18 +51,30 @@ export function SessionEditor() {
   const [rows, setRows] = useState<Row[]>(() =>
     players.map((p) => {
       const entry = existing?.entries.find((e) => e.playerId === p.id);
+      // On a new session everyone starts switched on — the usual case is
+      // "the regulars played" and toggling off is faster than toggling on.
+      // Ghosted players are the exception: they've stopped coming.
+      const active = existing ? Boolean(entry) : !p.ghostedAt;
       return {
         playerId: p.id,
-        // On a new session everyone starts switched on — the usual case is
-        // "the regulars played" and toggling off is faster than toggling on.
-        active: existing ? Boolean(entry) : true,
+        active,
         // A new session starts everyone at one standard buy-in, so a normal
         // night only needs the cash-outs typed in.
-        buyIn: entry ? toInput(entry.buyIn) : existing ? '' : toInput(defaultBuyIn),
+        buyIn: entry ? toInput(entry.buyIn) : active ? toInput(defaultBuyIn) : '',
         cashOut: entry ? toInput(entry.cashOut) : '',
       };
     }),
   );
+
+  // Results from players who have since been removed. They can't be edited,
+  // but they're part of the night: they count towards its totals and are
+  // saved back untouched, so editing an old session never deletes them.
+  // Anyone with a row of their own is left out, so nobody is counted twice.
+  const removed = useMemo(() => {
+    if (!existing) return [];
+    const editable = new Set(rows.map((r) => r.playerId));
+    return existing.entries.filter((e) => isLive(e) && !editable.has(e.playerId));
+  }, [existing, rows]);
 
   const patch = (playerId: string, change: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.playerId === playerId ? { ...r, ...change } : r)));
@@ -90,13 +106,15 @@ export function SessionEditor() {
   );
 
   const totals = useMemo(() => {
-    const buyIn = live.reduce((sum, e) => sum + e.buyIn, 0);
-    const cashOut = live.reduce((sum, e) => sum + e.cashOut, 0);
+    const all = [...live, ...removed];
+    const buyIn = all.reduce((sum, e) => sum + e.buyIn, 0);
+    const cashOut = all.reduce((sum, e) => sum + e.cashOut, 0);
     return { buyIn, cashOut, diff: cashOut - buyIn };
-  }, [live]);
+  }, [live, removed]);
 
   const playing = live.filter((e) => e.buyIn !== 0 || e.cashOut !== 0);
-  const canSave = playing.length > 0 && Boolean(date);
+  const seated = playing.length + removed.length;
+  const canSave = seated > 0 && Boolean(date);
 
   // With buy-ins pre-filled, a fresh session would otherwise open showing a
   // loss on every row and a "doesn't balance" warning. Neither is true yet —
@@ -104,18 +122,22 @@ export function SessionEditor() {
   const scoring = rows.some((r) => r.active && r.cashOut.trim() !== '');
 
   const positions = useMemo(() => {
-    const byId = new Map(players.map((p) => [p.id, p]));
-    return playing
-      .map((e) => ({ player: byId.get(e.playerId)!, net: e.cashOut - e.buyIn }))
-      .filter((p) => p.player);
-  }, [playing, players]);
+    // Every player ever, so a removed player's result still has a name.
+    const byId = new Map(ledger.players.map((p) => [p.id, p]));
+    return [...playing, ...removed]
+      .map((e) => ({ player: byId.get(e.playerId), net: e.cashOut - e.buyIn }))
+      .filter((p): p is { player: Player; net: number } => p.player !== undefined);
+  }, [playing, removed, ledger.players]);
 
   function handleSave() {
-    const entries: Entry[] = live.map((e) => ({
-      playerId: e.playerId,
-      buyIn: e.buyIn,
-      cashOut: e.cashOut,
-    }));
+    const entries: Entry[] = [
+      ...live.map((e) => ({
+        playerId: e.playerId,
+        buyIn: e.buyIn,
+        cashOut: e.cashOut,
+      })),
+      ...removed.map((e) => ({ ...e })),
+    ];
 
     const parsedHours = Number(hours);
     const session: Session = {
@@ -315,6 +337,7 @@ export function SessionEditor() {
 
                 <span className="grow truncate" style={{ fontSize: 14, fontWeight: 600 }}>
                   {player.name}
+                  {player.ghostedAt ? ' 👻' : ''}
                 </span>
 
                 <input
@@ -371,6 +394,32 @@ export function SessionEditor() {
           );
         })}
 
+        {removed.map((e) => {
+          const who = ledger.players.find((p) => p.id === e.playerId);
+          return (
+            <div
+              key={e.playerId}
+              className="row"
+              style={{ padding: '10px 14px', borderBottom: '1px solid var(--line-soft)' }}
+            >
+              <Avatar name={who?.name ?? '?'} color="#44615a" size="sm" />
+              <span className="grow truncate" style={{ fontSize: 14, fontWeight: 600 }}>
+                {who?.name ?? 'Removed player'}
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--text-faint)' }}>
+                  {' '}
+                  · removed
+                </span>
+              </span>
+              <span style={{ width: 78, textAlign: 'right' }}>
+                <Money cents={e.buyIn} colored={false} />
+              </span>
+              <span style={{ width: 78, textAlign: 'right' }}>
+                <Money cents={e.cashOut} colored={false} />
+              </span>
+            </div>
+          );
+        })}
+
         <div className="row" style={{ padding: '12px 14px' }}>
           <span className="grow" style={{ fontSize: 13, fontWeight: 650, color: 'var(--text-dim)' }}>
             Totals
@@ -384,7 +433,7 @@ export function SessionEditor() {
         </div>
       </div>
 
-      {totals.diff !== 0 && playing.length > 0 && scoring ? (
+      {totals.diff !== 0 && seated > 0 && scoring ? (
         <div className="banner banner-warn" style={{ marginTop: 12 }}>
           <span>⚠️</span>
           <span>
@@ -395,7 +444,7 @@ export function SessionEditor() {
         </div>
       ) : null}
 
-      {totals.diff === 0 && playing.length > 1 && scoring ? (
+      {totals.diff === 0 && seated > 1 && scoring ? (
         <div className="banner banner-ok" style={{ marginTop: 12 }}>
           <span>✓</span>
           <span>The table balances.</span>

@@ -2,9 +2,10 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Avatar, Confirm, EmptyState, Field, Money, Sheet } from '../components/ui';
 import { ChevronIcon, PlusIcon } from '../components/icons';
-import { computeStats } from '../lib/stats';
+import { computeBalances, computeStats } from '../lib/stats';
 import { PALETTE, useStore } from '../lib/store';
 import type { Player } from '../lib/types';
+import { GhostSheet, UnghostSheet } from './GhostSheet';
 
 export function Players() {
   const ledger = useStore((s) => s.ledger);
@@ -47,6 +48,7 @@ export function Players() {
                 <span className="grow">
                   <div className="lb-name">{s.player.name}</div>
                   <div className="lb-meta">
+                    {s.player.ghostedAt ? '👻 Ghosted · ' : ''}
                     {s.sessions === 0
                       ? 'No sessions yet'
                       : `${s.sessions} session${s.sessions === 1 ? '' : 's'}`}
@@ -115,6 +117,7 @@ export function Players() {
                       style={{ width: 8, height: 8, borderRadius: 999, background: p.color }}
                     />
                     {p.name}
+                    {p.ghostedAt ? ' 👻' : ''}
                   </button>
                 ))}
               </div>
@@ -140,25 +143,41 @@ export function Players() {
 }
 
 export function EditPlayerSheet({ player, onClose }: { player: Player; onClose: () => void }) {
+  const ledger = useStore((s) => s.ledger);
   const renamePlayer = useStore((s) => s.renamePlayer);
   const recolorPlayer = useStore((s) => s.recolorPlayer);
   const deletePlayer = useStore((s) => s.deletePlayer);
   const [name, setName] = useState(player.name);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<'remove' | 'ghost' | 'unghost' | null>(null);
 
-  if (confirming) {
+  // `player` is a snapshot from when the sheet opened; ghosting changes it.
+  const current = ledger.players.find((p) => p.id === player.id) ?? player;
+  const outstanding = useMemo(
+    () => computeBalances(ledger).find((b) => b.player.id === player.id)?.outstanding ?? 0,
+    [ledger, player.id],
+  );
+
+  if (confirming === 'remove') {
     return (
       <Confirm
-        title={`Remove ${player.name}?`}
+        title={`Remove ${current.name}?`}
         body="They come off the leaderboard, but past sessions keep their results so nobody else's totals shift."
         confirmLabel="Remove"
         onConfirm={() => {
           deletePlayer(player.id);
           onClose();
         }}
-        onClose={() => setConfirming(false)}
+        onClose={() => setConfirming(null)}
       />
     );
+  }
+
+  if (confirming === 'ghost') {
+    return <GhostSheet playerId={player.id} onClose={() => setConfirming(null)} onDone={onClose} />;
+  }
+
+  if (confirming === 'unghost') {
+    return <UnghostSheet playerId={player.id} onClose={() => setConfirming(null)} onDone={onClose} />;
   }
 
   return (
@@ -202,9 +221,36 @@ export function EditPlayerSheet({ player, onClose }: { player: Player; onClose: 
           Save
         </button>
 
-        <button className="btn btn-danger btn-block" onClick={() => setConfirming(true)}>
-          Remove from game
-        </button>
+        {current.ghostedAt ? (
+          <button className="btn btn-block" onClick={() => setConfirming('unghost')}>
+            Unghost — they&apos;re back
+          </button>
+        ) : (
+          <div className="stack-sm">
+            <button className="btn btn-block" onClick={() => setConfirming('ghost')}>
+              👻 Mark as ghosted
+            </button>
+            <span className="hint">
+              Stopped turning up? Writes off what they owe or are owed, so everyone else can
+              settle up. You can undo it if they come back.
+            </span>
+          </div>
+        )}
+
+        {/* Removing someone who isn't square drops their balance out of everyone's
+            totals with nobody to cover it, so it waits until they are. */}
+        {outstanding === 0 ? (
+          <button className="btn btn-danger btn-block" onClick={() => setConfirming('remove')}>
+            Remove from game
+          </button>
+        ) : (
+          <p className="hint">
+            {current.name} still {outstanding < 0 ? 'owes' : 'is owed'}{' '}
+            <Money cents={Math.abs(outstanding)} colored={false} />, so they can&apos;t be removed
+            yet — it would leave that unaccounted for in everyone&apos;s totals. Settle up
+            {current.ghostedAt ? '' : ' or mark them as ghosted'} first.
+          </p>
+        )}
       </div>
     </Sheet>
   );

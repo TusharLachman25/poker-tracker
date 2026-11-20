@@ -26,6 +26,20 @@ paying Tushar $13 and Sid $7. Record one (in full or in part) and it comes strai
 outstanding totals, with a history of everything already settled. A session
 can also be settled on its own, straight from the session editor.
 
+**Ghosting** — for someone who stops turning up without settling. Mark them as
+ghosted and whatever they owe is written off, split between the people they owe
+in proportion to what each is owed (if they were owed money instead, the people
+who owed it keep it, split the same way). It shows you exactly who takes on
+what before anything changes, and everyone else can then settle up cleanly.
+Ghosted players stay on the leaderboard with a 👻 and start switched off in new
+sessions. If they come back, **Unghost** puts every balance back as it was.
+
+The write-off is stored as payments marked "written off", so phones still on an
+older version of the app get the same balances, just labelled as ordinary
+payments. A player can only be removed once they're square, so a removal never
+leaves money unaccounted for; anyone removed before that rule existed shows up
+on the Payments page with the option to write their balance off.
+
 **Players** — per-person page with their full history, best and worst nights,
 hourly rate when you record how long you played.
 
@@ -176,6 +190,7 @@ src/
     money.ts      Parsing and formatting
     stats.ts      Leaderboard, per-player stats, outstanding balances
     settle.ts     Who-pays-whom
+    ghost.ts      Writing off a ghosted player's balance
     activity.ts   Audit-log entries and session diffing
     merge.ts      Last-write-wins merge used by sync
     store.ts      Zustand store + persistence

@@ -89,7 +89,15 @@ export function Leaderboard() {
             </span>
             <Avatar name={s.player.name} color={s.player.color} />
             <span className="grow">
-              <div className="lb-name">{s.player.name}</div>
+              <div className="lb-name">
+                {s.player.name}
+                {s.player.ghostedAt ? (
+                  <span role="img" aria-label="ghosted" title="Ghosted">
+                    {' '}
+                    👻
+                  </span>
+                ) : null}
+              </div>
               <div className="lb-meta">
                 {s.sessions} session{s.sessions === 1 ? '' : 's'} · {s.wins}W&nbsp;{s.losses}L
                 {s.streak !== 0 ? (

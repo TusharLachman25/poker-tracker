@@ -108,7 +108,7 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
   const payments = sortedPayments(activePayments(ledger));
   if (payments.length > 0) {
     lines.push('');
-    lines.push(['Payment date', 'From', 'To', 'Amount', 'Note'].join(','));
+    lines.push(['Payment date', 'From', 'To', 'Amount', 'Type', 'Note'].join(','));
     for (const p of payments) {
       lines.push(
         [
@@ -116,6 +116,8 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
           cell(names.get(p.from) ?? 'Unknown'),
           cell(names.get(p.to) ?? 'Unknown'),
           amount(p.amount),
+          // A write-off moves balances like a payment, but no money changed hands.
+          cell(p.writeOff ? `Written off (${names.get(p.writeOff.player) ?? 'Unknown'} ghosted)` : 'Payment'),
           cell(p.note ?? ''),
         ].join(','),
       );
@@ -126,10 +128,19 @@ export function exportCsv(ledger: Ledger, stats: PlayerStats[]): Promise<void> {
   const balances = computeBalances(ledger).filter((b) => b.outstanding !== 0);
   if (balances.length > 0) {
     lines.push('');
-    lines.push(['Player', 'Net', 'Paid out', 'Received', 'Still owed (+) / still owes (-)'].join(','));
+    lines.push(
+      ['Player', 'Net', 'Paid out', 'Received', 'Written off', 'Still owed (+) / still owes (-)'].join(','),
+    );
     for (const b of balances) {
       lines.push(
-        [cell(b.player.name), amount(b.net), amount(b.paid), amount(b.received), amount(b.outstanding)].join(','),
+        [
+          cell(b.player.name),
+          amount(b.net),
+          amount(b.paid),
+          amount(b.received),
+          amount(b.writtenOff),
+          amount(b.outstanding),
+        ].join(','),
       );
     }
   }
